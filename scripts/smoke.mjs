@@ -50,6 +50,25 @@ try {
   await new Promise(r => setTimeout(r, 6000));
   const outputRecovery = await operator.evaluate(() => window.installation.state()); assert.equal(outputRecovery.active, 'garden'); assert(outputRecovery.rendering.fps > 20);
   const displayPlacement = await app.evaluate(({ BrowserWindow, screen }) => { const w = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('audience.html')); return { fullscreen: w.isFullScreen(), bounds: w.getBounds(), displays: screen.getAllDisplays().map(d => ({ label: d.label, bounds: d.bounds })) }; });
+  // A native full-screen animation can itself publish screen metrics. A burst
+  // of unchanged notifications must not call any native placement methods.
+  const displayFeedback = await app.evaluate(async ({ BrowserWindow, screen }) => {
+    const w = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('audience.html'));
+    const calls = [], originals = new Map();
+    for (const name of ['setFullScreen', 'setBounds', 'showInactive']) {
+      originals.set(name, w[name]);
+      w[name] = function (...args) { calls.push(name); return originals.get(name).apply(this, args); };
+    }
+    try {
+      for (let i = 0; i < 30; i++) for (const d of screen.getAllDisplays()) {
+        screen.emit('display-metrics-changed', {}, d, ['workArea']);
+        screen.emit('display-metrics-changed', {}, d, ['bounds', 'scaleFactor', 'rotation']);
+      }
+      await new Promise(r => setTimeout(r, 750));
+      return calls;
+    } finally { for (const [name, original] of originals) w[name] = original; }
+  });
+  assert.deepEqual(displayFeedback, [], 'unchanged screen metrics must not cycle full screen');
   // Simulate removal in display enumeration, then restore the real monitor list.
   const missingDisplay = await app.evaluate(async ({ BrowserWindow, screen }) => {
     const original = screen.getAllDisplays; screen.getAllDisplays = () => [screen.getPrimaryDisplay()]; screen.emit('display-removed', {}, {});
@@ -58,6 +77,6 @@ try {
   });
   assert.equal(missingDisplay.fullscreen, false); assert.equal(missingDisplay.visible, true);
   const security = await app.evaluate(async ({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('audience.html')); return w.webContents.executeJavaScript('({canSaveKey:typeof window.installation.saveKey,canReadJob:typeof window.installation.job,node:typeof window.require})'); }); assert.deepEqual(security, { canSaveKey: 'undefined', canReadJob: 'undefined', node: 'undefined' });
-  await writeFile('test-results/smoke.json', JSON.stringify({ samples, recovered, live, reconnected, offline, outputRecovery, displayPlacement, missingDisplay, security, errors }, null, 2));
+  await writeFile('test-results/smoke.json', JSON.stringify({ samples, recovered, live, reconnected, offline, outputRecovery, displayPlacement, displayFeedback, missingDisplay, security, errors }, null, 2));
   assert.deepEqual(errors, []); console.log(JSON.stringify({ scenes: samples.map(s => ({ id: s.active, fps: s.rendering.fps, quality: s.rendering.quality, detector: s.camera.detector })), cameraRecovery: recovered.camera.state, detector: live.camera, reconnected: reconnected.camera.state, offline: offline.cloud, security, errors }, null, 2));
 } finally { clearTimeout(watchdog); const stop = setTimeout(() => app.process().kill('SIGKILL'), 8000); await app.close(); clearTimeout(stop); }

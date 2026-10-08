@@ -8,6 +8,7 @@ const { Scheduler } = require('./core/scheduler.cjs');
 const { CloudGate } = require('./core/cloud-gate.cjs');
 const { mintLucyToken } = require('./core/fal-auth.cjs');
 const { resolveKeyPath } = require('./core/key-path.cjs');
+const { outputLayout, OutputPlacement } = require('./core/output-placement.cjs');
 const { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure } = require('./core/robot-status.cjs');
 protocol.registerSchemesAsPrivileged([{ scheme: 'reverie', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 if (process.env.REVERIE_TEST_DIR) app.setPath('userData', process.env.REVERIE_TEST_DIR);
@@ -27,6 +28,7 @@ scheduler.availability('robots', false, performance.now());
 const gate = new CloudGate(readJSON('cloud-budget.json', {}));
 let operator, audience, engine, robot, quitting = false, frame = null, preview = '', robotOutput = null, robotJob = null, robotTimer, generation = 0;
 let robotClosing = null, quitAfterCleanup = false;
+let outputPlacement;
 let robotDecoded = false, robotStartedAt = 0, robotPresented = false, robotStopAt = 0, robotPhase = 'idle';
 let camera = { state: 'starting', message: 'Starting shared camera service', devices: [], detector: 'starting' };
 let rendering = { fps: 0, scene: scheduler.active, quality: 1 }, cloud = { state: 'waiting', message: '' };
@@ -57,15 +59,13 @@ function makeWindow(role, options = {}) {
   return win;
 }
 function createOperator() { operator = makeWindow('operator', { minWidth: 1020, minHeight: 700, title: 'Reverie · Installation control' }); operator.once('ready-to-show', () => operator.show()); operator.on('close', e => { if (!quitting) { e.preventDefault(); operator.hide(); } }); }
-function placeOutput() {
-  if (quitting || !audience || audience.isDestroyed()) return;
-  const all = screen.getAllDisplays(), primary = screen.getPrimaryDisplay();
-  const display = all.find(d => String(d.id) === settings.displayId) || (!settings.displayId ? all.find(d => d.id !== primary.id) : null);
-  audience.setFullScreen(false);
-  if (display) { audience.setBounds(display.bounds); audience.showInactive(); audience.setFullScreen(settings.fullscreen); }
-  else { audience.setBounds({ x: primary.workArea.x + 60, y: primary.workArea.y + 60, width: Math.min(1280, primary.workArea.width - 80), height: Math.min(720, primary.workArea.height - 80) }); audience.showInactive(); log('display-preview', 'External display absent; windowed preview on primary display'); }
+function placeOutput(options) {
+  if (quitting || !outputPlacement || !audience || audience.isDestroyed()) return;
+  const layout = outputLayout(screen, settings);
+  if (layout.preview && !outputPlacement.layout?.preview) log('display-preview', 'External display absent; windowed preview on primary display');
+  outputPlacement.place(layout, options);
 }
-function createAudience() { renderHeartbeat = Date.now(); audience = makeWindow('audience', { title: 'Reverie · Audience', frame: false }); audience.once('ready-to-show', placeOutput); audience.on('close', e => { if (!quitting) { e.preventDefault(); stopRobot('DISPLAY_LOST'); audience.hide(); operator?.show(); } }); }
+function createAudience() { renderHeartbeat = Date.now(); audience = makeWindow('audience', { title: 'Reverie · Audience', frame: false }); audience.once('ready-to-show', () => { outputPlacement = new OutputPlacement(audience); placeOutput({ show: true }); }); audience.on('close', e => { if (!quitting) { e.preventDefault(); stopRobot('DISPLAY_LOST'); outputPlacement?.hide(); audience.hide(); operator?.show(); } }); }
 function createEngine() { cameraHeartbeat = Date.now(); engine = makeWindow('engine', { width: 640, height: 360 }); }
 function restart(role) {
   if (quitting || restarting.has(role)) return;
@@ -198,9 +198,9 @@ app.whenReady().then(() => {
     if (name === 'stop-robot') stopRobot('CANCELLED');
     if (name === 'next') { scheduler.next(now); stopRobot('SCENE_ENDED'); }
     if (name === 'pause') scheduler.paused ? scheduler.resume(now) : scheduler.pause(now);
-    if (name === 'output') { audience.show(); placeOutput(); }
+    if (name === 'output') placeOutput({ show: true });
     if (name === 'controls') operator.show();
-    if (name === 'fullscreen') { audience.show(); audience.setFullScreen(!audience.isFullScreen()); }
+    if (name === 'fullscreen') outputPlacement?.toggleFullscreen();
     if (name === 'reconnect') restart('engine');
     if (name === 'logs') shell.showItemInFolder(path.join(runtime, 'installation.log'));
     if (name === 'quit') { quitting = true; app.quit(); }
@@ -248,7 +248,12 @@ app.whenReady().then(() => {
   ipcMain.on('robot-stage', (e, phase) => { if (robotClosing || !allowed(e, robot) || !['authenticating', 'signaling', 'connecting-video', 'receiving-video'].includes(phase)) return; robotPhase = phase; cloud.phase = phase; cloud.message = `Lucy: ${phase.replaceAll('-', ' ')} · 25 second limit`; log('robot-stage', phase); broadcast(); });
   ipcMain.on('robot-result', (e, result) => { if (!allowed(e, robot)) return; stopRobot(result?.code, result?.detail); });
   createOperator(); createAudience(); createEngine();
-  screen.on('display-added', () => { placeOutput(); broadcast(); }); screen.on('display-removed', () => { placeOutput(); broadcast(); }); screen.on('display-metrics-changed', () => placeOutput());
+  screen.on('display-added', () => { placeOutput(); broadcast(); }); screen.on('display-removed', () => { placeOutput(); broadcast(); });
+  screen.on('display-metrics-changed', (_event, _display, changedMetrics) => {
+    // Native full-screen Spaces change the Dock/menu-bar work area. They do
+    // not change monitor geometry and must not trigger another placement.
+    if (changedMetrics.some(metric => ['bounds', 'scaleFactor', 'rotation'].includes(metric))) placeOutput();
+  });
   powerSaveBlocker.start('prevent-display-sleep');
   setInterval(() => { scheduler.tick(performance.now()); syncRobot(); if (!scheduler.paused && scheduler.until('robots', performance.now(), true) <= 15000) startRobot(); broadcast(); }, 500);
   setInterval(() => { if (Date.now() - cameraHeartbeat > 12000) restart('engine'); if (audience?.isVisible() && Date.now() - renderHeartbeat > 10000) restart('audience'); }, 3000);
@@ -258,6 +263,7 @@ app.on('activate', () => operator?.show());
 app.on('second-instance', () => { if (operator && !operator.isDestroyed()) { operator.show(); operator.focus(); } });
 app.on('before-quit', event => {
   quitting = true;
+  outputPlacement?.dispose();
   if (!quitAfterCleanup && gate.busy) {
     event.preventDefault();
     stopRobot('APP_QUIT').then(() => { quitAfterCleanup = true; app.quit(); });

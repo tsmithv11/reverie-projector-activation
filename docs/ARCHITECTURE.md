@@ -23,6 +23,8 @@ flowchart LR
 
 The main process owns scheduling using a monotonic clock, settings, windows, log rotation, credentials and cloud spending reservations. Scene deadlines continue when the camera, detector or cloud is unavailable. Independent camera/renderer heartbeats restart lost or unresponsive processes with a 1.5-second delay. The cloud window has a main-process hard lifetime; its termination also disposes WebRTC resources even if its JavaScript stalls.
 
+Audience placement ignores Dock/menu-bar work-area notifications and applies only changed output geometry. Native full-screen transitions are serialized through their completion events; monitor changes during an animation replace the pending layout. Repeated display notifications and reopening the audience view preserve manual full-screen choices. Hidden output stays hidden until explicitly reopened.
+
 The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement; the main process holds only the newest frame. The audience has at most one frame request outstanding. Motion and inference each have a single in-flight job, with no accumulated work queue. Detection is sampled every 300/400/650 ms; motion every 65/90/140 ms according to quality. Old analysis is expired at 1.5 seconds; old boxes at 1.6 seconds; the rendered camera at two seconds. Stalled video is reopened after 4.5 seconds. No persistent tracks are maintained.
 
 | Resource | Bound |

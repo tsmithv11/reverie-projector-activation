@@ -1,0 +1,20 @@
+{
+  "description": "Reference-matched local artwork for Small wonderful things. Built-in image generation; no runtime generation or network dependency.",
+  "reference": "User-provided Screenshot 2026-10-08 at 8.39.25 AM.png",
+  "generated": "2026-10-08",
+  "assets": [
+    {
+      "file": "bay.png",
+      "width": 1672,
+      "height": 941,
+      "prompt": "Use case: identity-preserve.\nAsset type: high-resolution 16:9 background plate for an interactive animated scene.\nInput image 1 is the user's exact visual target. Reconstruct this exact scene as faithfully as possible at 3840x2160 or the highest available landscape resolution. Match the composition and all creature identities, poses, scale, placement, soft tactile sculpted / furry 3D animated-film materials, sunset colors, camera, and lighting. Pastel pink/peach sky on the left fading into lavender blue at upper right. Golden Gate Bridge recedes diagonally from the right edge to middle, with a large reddish-purple tower at x78%, dark purple rocky shore below. Pink and lavender reflective water fills bottom quarter. Large happy pale blue/lavender fuzzy long-neck creature with cream-pink belly and magenta leaf horns occupies left-middle x14–40%, seated in water. Small blue axolotl with two long pink antennae sits at far bottom-left. Round green fluffy creature leans around dark purple rock at center x52–62%. Small smiling blue creature with cream belly sits on right x69–80%. Tiny pink critter in water x63%. Preserve all those creatures and all shoreline reflections.\nOnly change: remove the small airborne pink creature between the large left creature and center rock (around x37%, y64%), leaving natural softly lit empty pink sky/water in its place. It will be animated as a separate sprite. Do not add bubbles. No extra creatures, objects, text, borders, or UI. Fill the complete 16:9 frame. Faithful enhanced reconstruction of this reference, not a redesign. Crisp refined details at high resolution but retain the dreamy soft light and the exact placement of the large left creature's smile and the green creature on the rock."
+    },
+    {
+      "file": "jumper.png",
+      "width": 1145,
+      "height": 1374,
+      "transparent": true,
+      "prompt": "Use case: background-extraction.\nAsset type: transparent animation sprite, a single small creature for a high resolution scene.\nImage 1 is the identity reference. Recreate ONLY the small slender pink/lilac axolotl-like creature that is jumping between the big blue creature on the left and the center rock (x37%, y64% in the reference). Single full-body creature, 3/4 view facing slightly right toward camera. Small round head with tiny dark eyes and a joyful small open smile; lilac-pink feathery external gills around head; slender soft pear-shaped light pink tummy; short outstretched arms and short dangling legs, tiny curved tail. Match the soft, detailed tactile 3D animated-film material and warm peach light from upper left with lavender shadows. Keep creature pink/lilac, NOT blue, NOT a round ball. Entire creature including gills, both feet and tail visible. Centered and filling 85% of image height. Genuine transparent background, clean soft alpha silhouette. No water, no splash, no ground, no reflections, no shadows outside creature, no scenery, no text. Only this one character."
+    }
+  ]
+}

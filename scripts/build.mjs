@@ -7,6 +7,7 @@ await build({ entryPoints: ['app/workers/motion.js', 'app/workers/detector.js'],
 for (const file of ['operator.html', 'audience.html', 'engine.html', 'robot.html', 'style.css']) await cp(`app/${file}`, `dist/${file}`);
 await cp('node_modules/@mediapipe/tasks-vision/wasm', 'dist/wasm', { recursive: true });
 await cp('assets/models', 'dist/models', { recursive: true });
+await cp('assets/scenes', 'dist/scenes', { recursive: true, filter: source => !source.endsWith('provenance.json') });
 await cp('assets/model-manifest.json', 'dist/models/manifest.json');
 await cp('THIRD_PARTY_NOTICES.md', 'dist/THIRD_PARTY_NOTICES.md');
 await cp('assets/MEDIAPIPE-LICENSE.txt', 'dist/MEDIAPIPE-LICENSE.txt');

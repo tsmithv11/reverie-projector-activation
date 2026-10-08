@@ -51,7 +51,7 @@ Raw evidence: `test-results/soak.json`, `test-results/soak-before-pacing-fix.jso
 - **Detection:** a lightweight 320×320-input COCO detector with at most 24 displayed boxes. It can miss small, dark, occluded or partial people and misclassify robot-like figures. There is no ground-truth crowd accuracy measurement. Group motion effects continue without detections; butterflies need occupied regions.
 - **Hardware:** no physical USB reconnect, camera permission-denial dialog, projector cable reconnect, actual projector, real dense crowd, older M-series MacBook, Intel MacBook or Linux hardware qualification. Those paths have code and selected simulated tests; they are not physically certified.
 - **Duration:** short real-time endurance runs plus accelerated logic tests do not prove multi-hour reliability. Run an eight-hour rehearsal on the venue hardware with the actual camera, projector, lighting and audience geometry.
-- **Artwork:** local creatures/growth are original vector cartoon effects, with camera stylization, not Lucy-like per-pixel generative video. No placeholder scene modules are shipped. The line effect is a local edge map, not 3D reconstruction. Supplied images guided colors, frames and character style.
+- **Artwork:** Small wonderful things uses locally bundled reference-matched raster art, subtle GPU breathing/water displacement and a separate animated pink creature. The garden uses vector growth. These local scenes do not use realtime generative video. The line effect is a local edge map, not 3D reconstruction.
 - **Distribution:** the macOS ARM64 bundle runs locally but is unsigned/not notarized and uses the default Electron app icon. Source supports Linux with setup/build commands; no Linux binary was tested or delivered.
 - **Supervision:** internal renderer/worker recovery does not restart a dead main process, crashed OS, disconnected power, or failed projector. An event deployment should arrange an external relaunch/supervision policy.
 
@@ -130,3 +130,15 @@ Validation: 27 unit tests pass. Offline Electron checks pass for scene exit, pau
 For FAL investigation, use endpoint `decart/lucy-2-5/realtime`, the two UTC intervals above, and the exact provider error `Concurrent session limit reached.` The observed clean FAL socket closure does not prove its upstream Decart session was released; the client cannot inspect or reset that upstream quota through the documented signaling interface.
 
 Repeat check (paid opt-in only): `REVERIE_LIVE_CHECK=1 node scripts/lucy-session-check.mjs --retry --repeat`. It stops on the first refusal and never bypasses the configured interval or caps.
+
+## October 8 — reference-matched Small wonderful things
+
+Replaced camera tinting and seven roaming vector creatures with a detailed reconstruction of the supplied pastel Golden Gate bay. The 1672×941 background is higher resolution than the 1038×580 reference; the separate transparent jumper is 1145×1374. Rendering remains adaptive up to 1920×1080. These are the actual asset dimensions, not 4K artwork. Built-in image generation prompts and provenance are retained under `assets/scenes/small-wonderful-things/provenance.json`.
+
+The artwork fills the existing angled portal. Five painted creatures remain in their original locations with small local breathing movements, and water has subtle ripples. The separate pink creature rests partly submerged, makes a 1.35-second hop after 120 ms of motion, then waits at least 1.6 seconds before another hop. Motion emits bounded bubbles; stillness creates no new bubbles or jumps. Existing bubbles fade within seven seconds and an airborne creature finishes its landing. Missing camera frames preserve the idle bay. If WebGL is unavailable, the detailed static background and animated pink sprite/bubbles remain usable.
+
+- All 31 unit/stress tests passed, including idle/noise gating, motion-triggered hops, landing cooldown, particle expiry, quality caps, cleanup and eight simulated hours of motion.
+- `npm run test:wonderful` passed in the desktop app: high and low quality both sampled at 30 fps, with no renderer errors. Camera input withheld for ten seconds left the scene running at 30 fps with zero remaining bubbles.
+- Verified native asset loading, shader initialization, jump apex and settled state; reviewed screenshots of the angled portal, idle state, jump, low quality and GPU fallback.
+- Evidence: `test-results/wonderful-check.json` and `test-results/wonderful-*.png`. All motion input was synthetic; no provider call or audience recording was needed.
+- The rebuilt Mac ARM64 app launched successfully and rendered this scene at 30 fps at high quality. Its bundled scene code and both PNG assets match the tested source build; credentials and test fixtures are absent from the archive.

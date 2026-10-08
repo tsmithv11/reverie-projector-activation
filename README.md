@@ -60,7 +60,7 @@ The endpoint is **`decart/lucy-2-5/realtime`**, verified against the [official A
 |---|---|---|
 | Audience / field study | Local EfficientDet-Lite0 person detection; smoothed frame difference; animated heat gradients | Boxes and detector scores come from the model. Heat is labeled **SIMULATED HEAT / ARTISTIC FIELD**, never temperature. “Frame motion” is normalized image change, not physical speed or a crowd count. |
 | Machine dreaming | Live camera conversion through Lucy 2.5 / FAL | Returned robot video follows the current camera continuously. Unavailable results are skipped, with diagnostics only in the operator console. |
-| Small wonderful things | Local camera stylization, person-box monster overlays, vector creatures, bubbles driven by motion | Cartoon/vector interpretation of the reference, not photoreal generative video. Seven creatures chase and pop bounded bubbles. |
+| Small wonderful things | Detailed pastel bay artwork matched to the supplied creature/Golden Gate reference, fitted inside the angled portal; local breathing and water animation | Five painted creatures stay anchored. One separate pink creature rests in the water and hops when motion persists for 120 ms; motion also releases bubbles. Hops have a landing cooldown. Stillness stops new bubbles/hops; the bay remains visible without a camera. Artwork is bundled locally; no cloud calls. |
 | An outline of us | Local Sobel edges, camera silhouette layer, cyan person boxes and artistic perspective grid | No inferred depth, distance, velocity, emotion, or identity. |
 | A garden of possibility | Local motion-grid growth, occupancy from person detections, smoothed stillness | Plants fade after 24–42 seconds; butterflies gather after sustained low motion. Pink `#ffa0d0`, lavender `#E7D2F6`, blue `#4d65ff`, orange `#FF734A`, purple `#271431` were read from [Reverie](https://www.reveriesummit.com/); leaf green is a complementary addition. |
 
@@ -83,6 +83,7 @@ Settings save to the application user-data directory (`.runtime` for source runs
 
 ```sh
 npm test               # scheduler, motion, cloud gate, lifecycle and accelerated crowd stress
+npm run test:wonderful # reference scene, motion/idle behavior, camera loss and visual snapshots
 npm run test:robots    # live frame handoff, connection limits, stalls and offline WebRTC roundtrip
 npm run test:smoke     # macOS desktop, mock webcam, workers, camera restart, offline cloud
 npm run test:soak      # 10-minute real-time synthetic crowd run

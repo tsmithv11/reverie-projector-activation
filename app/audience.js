@@ -39,13 +39,30 @@ function ambient(w, h, time) {
   for (let i = 0; i < 5; i++) { ctx.strokeStyle = `rgba(255,225,244,${.1 + i * .035})`; ctx.lineWidth = w * .02; const s = w * (.2 + i * .12); ctx.strokeRect(-s / 2, -s / 2, s, s); }
   ctx.restore();
 }
+function portalPath(w, h) {
+  ctx.moveTo(w * .06, h * .14); ctx.lineTo(w * .92, h * .045); ctx.lineTo(w * .97, h * .87); ctx.lineTo(w * .1, h * .98); ctx.closePath();
+}
+function renderWonderfulThings(context) {
+  const { w, h } = context;
+  const backdrop = ctx.createLinearGradient(0, 0, w, h);
+  backdrop.addColorStop(0, '#d799c5'); backdrop.addColorStop(.5, '#a996d1'); backdrop.addColorStop(1, '#7567a6');
+  ctx.fillStyle = backdrop; ctx.fillRect(0, 0, w, h);
+  ctx.save(); ctx.beginPath(); portalPath(w, h); ctx.clip();
+  // Fit the whole landscape into the angled opening, with 1% overscan at
+  // the right edge for the frame's slight departure from a parallelogram.
+  ctx.transform(.87, -h * .095 / w, w * .04 / h, .84, w * .06, h * .14);
+  const rendered = host.render(ctx, context);
+  ctx.restore(); return rendered;
+}
 function finishComposition(w, h, time, cameraLive) {
   // The same angled portal and branding follows every scene.
   ctx.save();
   const wash = ctx.createLinearGradient(0, 0, w, h); wash.addColorStop(0, '#ffa0d055'); wash.addColorStop(1, '#8272db44');
-  ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.moveTo(w * .06, h * .14); ctx.lineTo(w * .92, h * .045); ctx.lineTo(w * .97, h * .87); ctx.lineTo(w * .1, h * .98); ctx.closePath(); ctx.fill('evenodd');
-  ctx.strokeStyle = '#ffbadb70'; ctx.lineWidth = w * .018; ctx.beginPath(); ctx.moveTo(w * .06, h * .14); ctx.lineTo(w * .92, h * .045); ctx.lineTo(w * .97, h * .87); ctx.lineTo(w * .1, h * .98); ctx.closePath(); ctx.stroke();
-  const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
+  ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); portalPath(w, h); ctx.fill('evenodd');
+  ctx.strokeStyle = '#ffbadb70'; ctx.lineWidth = w * .018; ctx.beginPath(); portalPath(w, h); ctx.stroke();
+  if (state.active !== 'monsters') {
+    const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
+  }
   ctx.fillStyle = '#fcedf6'; ctx.font = `500 ${w * .015}px sans-serif`; ctx.fillText('R E V E R I E', w * .055, h * .075);
   ctx.font = `${w * .011}px monospace`; ctx.textAlign = 'right'; ctx.fillText('A SHARED DAYDREAM', w * .95, h * .075); ctx.textAlign = 'left';
   if (latest?.demo && cameraLive) { ctx.fillStyle = '#fff4fb'; ctx.textAlign = 'right'; ctx.font = `${w * .01}px monospace`; ctx.fillText('DEMO / SYNTHETIC CROWD', w * .94, h * .93); }
@@ -67,10 +84,12 @@ function tick(now) {
   const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
   if (host.id !== state.active || activation !== state.activation) { previousCtx.drawImage(canvas, 0, 0); crossfadeAt = now; host.activate(state.active, context, activation !== state.activation); activation = state.activation; }
   ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
-  const visible = !!state.active && (state.active === 'robots' ? robotLive : live);
+  // The painted bay stays alive during stillness or camera loss; only its
+  // interactive effects need fresh motion. Other camera scenes keep their gate.
+  const visible = !!state.active && (state.active === 'monsters' || (state.active === 'robots' ? robotLive : live));
   if (!visible) ambient(w, h, context.time);
-  else if (!host.render(ctx, context)) { ambient(w, h, context.time); camera(ctx, source, w, h, .5); }
-  finishComposition(w, h, context.time, visible);
+  else if (!(state.active === 'monsters' ? renderWonderfulThings(context) : host.render(ctx, context))) { ambient(w, h, context.time); if (state.active !== 'monsters') camera(ctx, source, w, h, .5); }
+  finishComposition(w, h, context.time, live);
   const transition = (now - crossfadeAt) / 1400;
   if (transition < 1) { const fade = Math.max(0, Math.min(1, transition)); ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade); ctx.drawImage(previous, 0, 0, w, h); ctx.globalAlpha = 1; }
   frames++;

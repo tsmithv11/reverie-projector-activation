@@ -1,0 +1,21 @@
+{
+  "name": "reverie-projector", "version": "0.1.0", "private": true,
+  "description": "Local-first audience installation for Reverie", "author": "Reverie",
+  "type": "module", "main": "app/main.cjs",
+  "scripts": {
+    "assets": "node scripts/assets.mjs", "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .", "demo": "npm run build && electron . --demo",
+    "test": "node --test tests/*.test.mjs", "test:smoke": "node scripts/smoke.mjs",
+    "test:soak": "node scripts/soak.mjs", "pack": "npm run build && electron-builder --dir",
+    "dist:mac": "npm run build && electron-builder --mac zip", "dist:linux": "npm run build && electron-builder --linux AppImage"
+  },
+  "dependencies": {"@fal-ai/client": "1.10.1", "@mediapipe/tasks-vision": "0.10.32", "dotenv": "17.2.3"},
+  "devDependencies": {"electron": "44.5.1", "electron-builder": "26.15.3", "esbuild": "0.28.2", "playwright": "1.63.0"},
+  "build": {
+    "appId": "com.reverie.installation", "productName": "Reverie Installation",
+    "files": ["app/main.cjs", "app/preload.cjs", "app/core/**", "dist/**", "package.json"],
+    "directories": {"output": "release"},
+    "mac": {"category": "public.app-category.entertainment", "identity": null, "extendInfo": {"NSCameraUsageDescription": "Reverie uses this camera for a live audience installation. Local effects stay on this computer; optional robot generation sends a frozen frame to FAL/Decart."}},
+    "linux": {"category": "Graphics", "target": ["AppImage"]}
+  }
+}

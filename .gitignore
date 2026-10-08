@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+.env
+.env.*
+!.env.example
+.runtime/
+test-results/
+assets/models/*.tflite
+.DS_Store
+*.log

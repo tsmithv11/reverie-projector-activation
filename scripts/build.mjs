@@ -1,0 +1,13 @@
+import { build } from 'esbuild';
+import { mkdir, cp, access } from 'node:fs/promises';
+await access('assets/models/efficientdet_lite0.tflite').catch(() => { throw Error('Run npm run assets once online before building.'); });
+await mkdir('dist', { recursive: true });
+await build({ entryPoints: ['app/operator.js', 'app/audience.js', 'app/engine.js', 'app/robot.js'], outdir: 'dist', bundle: true, format: 'esm', platform: 'browser', target: 'chrome140', sourcemap: true });
+await build({ entryPoints: ['app/workers/motion.js', 'app/workers/detector.js'], outdir: 'dist/workers', bundle: true, format: 'iife', platform: 'browser', target: 'chrome140', sourcemap: true });
+for (const file of ['operator.html', 'audience.html', 'engine.html', 'robot.html', 'style.css']) await cp(`app/${file}`, `dist/${file}`);
+await cp('node_modules/@mediapipe/tasks-vision/wasm', 'dist/wasm', { recursive: true });
+await cp('assets/models', 'dist/models', { recursive: true });
+await cp('assets/model-manifest.json', 'dist/models/manifest.json');
+await cp('THIRD_PARTY_NOTICES.md', 'dist/THIRD_PARTY_NOTICES.md');
+await cp('assets/MEDIAPIPE-LICENSE.txt', 'dist/MEDIAPIPE-LICENSE.txt');
+console.log('Built desktop windows, workers and offline vision assets.');

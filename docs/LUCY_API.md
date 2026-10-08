@@ -1,6 +1,22 @@
 # Lucy API verification — October 8, 2026
 
-Sources checked before implementing the adapter:
+## Direct Decart, with FAL backup
+
+The primary provider uses official `@decartai/sdk` 0.2.5, `models.realtime("lucy-2.5")`, LiveKit media and `initialState.prompt` with enhancement disabled. Main mints a token through `POST https://api.decart.ai/v1/client/tokens` using `x-api-key`, with `expiresIn: 120`, `allowedModels: ["lucy-2.5"]` and `constraints.realtime.maxSessionDuration: 100`. Only the returned `apiKey` reaches the isolated service. The custom `reverie://` origin is not included in allowedOrigins because Decart requires HTTP(S) origins.
+
+References: [JavaScript realtime API](https://docs.platform.decart.ai/sdks/javascript-realtime), [token API](https://docs.platform.decart.ai/api-reference/create-client-token), [network requirements](https://docs.platform.decart.ai/integrations/network-requirements), and the installed SDK source (`realtime/client.js`, `stream-session.js`, `browser/prepare-connection.js`).
+
+The SDK uses `wss://api3.decart.ai`; media signaling uses `lk.decart.ai` and `*.lkc.decart.ai`. The robot service CSP permits these hosts, including HTTPS for LiveKit connection validation. Its frame-metadata worker is copied next to the bundled robot script so the SDK’s relative worker URL resolves in both source and packaged runs. Telemetry and SDK logging are disabled.
+
+`retries: 0` disables initial retries. Unexpected disconnects close the service’s tracked sockets and peers synchronously and prevent subsequent transport creation, including pending-connect cancellation (the SDK only exposes disconnect after connect resolves). Close handshakes get up to 3.5 seconds, with main’s five-second forced teardown as a backstop. An acknowledgement confirms local closure, not provider quota release.
+
+Configured providers are attempted in order: Decart, then FAL, at most once each. A failed attempt is fully torn down before the backup is reserved. Each provider consumes a separate persisted spending-cap slot; only the interval is bypassed for the same request’s backup. Stop, Next scene, disabling Lucy, camera/display loss and quitting cancel a queued backup. Both unavailable means the robot scene remains skipped. Each provider has a 25-second setup deadline and a maximum 100-second total lifetime.
+
+`npm run test:providers` uses mocked authentication and signaling plus synthetic video, covering ordering, cleanup, cancellation, missing keys, caps, Decart timeout, and both providers failing. The FAL takeover test uses the actual Decart SDK signaling followed by a local WebRTC roundtrip through the FAL adapter. No paid Decart success has been verified; the user will supply a key.
+
+## FAL backup protocol
+
+Sources checked before implementing the FAL adapter:
 
 - Official API: https://fal.ai/models/decart/lucy-2-5/realtime/api
 - Schema: https://fal.ai/models/decart/lucy-2-5/realtime/llms.txt

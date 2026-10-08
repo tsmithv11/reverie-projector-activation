@@ -1,19 +1,22 @@
 const FAILURES = {
-  AUTH_REJECTED: 'FAL rejected the API key. Check the key and its permissions.',
-  AUTH_NETWORK: 'Could not reach FAL authentication. Check the internet connection.',
-  AUTH_RESPONSE: 'FAL returned an invalid authentication response.',
+  AUTH_REJECTED: 'The provider rejected the API key. Check the key and its permissions.',
+  AUTH_NETWORK: 'Could not reach provider authentication. Check the internet connection.',
+  AUTH_RESPONSE: 'The provider returned an invalid authentication response.',
+  DECART_CREDITS: 'Decart requires account credit. Check billing in the Decart console.',
+  DECART_RATE_LIMIT: 'Decart rate limit reached. Wait before trying again.',
+  DECART_SERVICE: 'Decart authentication service is unavailable.',
   FAL_CREDITS: 'FAL requires account credit. Check billing in the FAL console.',
   FAL_RATE_LIMIT: 'FAL rate limit reached. Wait before trying again.',
   FAL_SERVICE: 'FAL authentication service is unavailable.',
-  SIGNALING: 'FAL signaling failed. Check service availability and the network.',
-  SIGNALING_BLOCKED: 'The app security policy blocked FAL signaling. Update the installation build.',
+  SIGNALING: 'Video signaling failed. Check service availability and the network.',
+  SIGNALING_BLOCKED: 'The app security policy blocked video signaling. Update the installation build.',
   PEER_CONNECTION: 'The Lucy video connection failed. Check firewall, VPN, and WebRTC access.',
   VIDEO_STALLED: 'Lucy stopped returning live video for two seconds. Check the service and network.',
   CAMERA_LOST: 'The live camera stopped sending frames. Reconnect the camera.',
   DISPLAY_LOST: 'The audience display closed or restarted; the paid stream was stopped.',
   NO_VIDEO: 'Lucy did not return usable video before the connection deadline.',
   INVALID_IMAGE: 'Lucy returned an empty, black, or invalid image.',
-  SESSION_BUSY: 'FAL/Decart refused the live connection: concurrent-session limit reached. This app opens one Lucy session at a time. Provider capacity is unconfirmed. If this persists, ask FAL support to check upstream sessions and quota.',
+  SESSION_BUSY: 'The provider refused the live connection: concurrent-session limit reached. This app opens one Lucy session at a time. Provider capacity is unconfirmed. If this persists, ask the provider’s support to check upstream sessions and quota.',
   PROVIDER_ERROR: 'Lucy reported a generation error.',
   TIMEOUT: 'Lucy exceeded the 25-second connection deadline.',
   RENDERER_EXIT: 'The isolated Lucy service stopped unexpectedly.',
@@ -33,7 +36,7 @@ function safeDiagnostic(value, secret = '') {
 }
 function classifyRobotFailure(code, detail) {
   const text = typeof detail === 'string' ? detail : detail?.message || detail?.detail || '';
-  return ['PROVIDER_ERROR', 'SIGNALING'].includes(code) && /concurrent\s+session\s+limit\s+reached/i.test(text) ? 'SESSION_BUSY' : code;
+  return ['PROVIDER_ERROR', 'SIGNALING'].includes(code) && /(?:concurrent\s+)?session[_\s]+limit(?:[_\s]+reached)?/i.test(text) ? 'SESSION_BUSY' : code;
 }
 function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh, now }) {
   let reason = gate.reason(now, settings, hasKey);
@@ -42,7 +45,7 @@ function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh,
   else if (!reason && (camera !== 'live' || !frameFresh)) reason = 'camera';
   const reasons = {
     disabled: 'Enable Lucy 2.5 to stream live robot conversions.',
-    'missing-key': 'No FAL key found. Add it at the key path shown below.',
+    'missing-key': 'No Decart or FAL key found. Add a key at the path shown below.',
     'scene-disabled': 'Enable Machine dreaming in the playlist.',
     demo: 'Rehearsal mode does not upload audience frames.',
     camera: 'A live camera frame is required.',
@@ -55,6 +58,6 @@ function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh,
   };
   const blocked = ['disabled', 'missing-key', 'scene-disabled', 'demo'].includes(reason);
   const message = blocked ? `${reasons[reason]}${cloud.code ? ` Last failure: ${cloud.message}` : ''}` : cloud.message || reasons[reason] || 'Waiting for the next scheduled appearance.';
-  return { ...cloud, state: blocked ? reason : cloud.state, message, ready, canGenerate: !reason, canRetry: gate.requiresManualRetry && !gate.reason(now, settings, hasKey, true) && !['scene-disabled', 'demo', 'camera'].includes(reason) && camera === 'live' && frameFresh, blockReason: reasons[reason] || '', display: ready ? 'Live · Lucy 2.5' : cloud.state === 'connecting' ? 'Connecting · current scene continues' : 'Skipped · no live Lucy video' };
+  return { ...cloud, state: blocked ? reason : cloud.state, message, ready, canGenerate: !reason, canRetry: gate.requiresManualRetry && !gate.reason(now, settings, hasKey, true) && !['scene-disabled', 'demo', 'camera'].includes(reason) && camera === 'live' && frameFresh, blockReason: reasons[reason] || '', display: ready ? `Live · Lucy 2.5 / ${cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : cloud.state === 'connecting' ? 'Connecting · current scene continues' : 'Skipped · no live Lucy video' };
 }
 module.exports = { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure };

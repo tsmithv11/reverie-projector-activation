@@ -4,7 +4,7 @@ import path from 'node:path';
 const seconds = Math.max(30, Number(process.env.SOAK_SECONDS || 600));
 await mkdir('test-results', { recursive: true });
 const executablePath = process.env.REVERIE_EXECUTABLE;
-const app = await electron.launch({ executablePath, args: executablePath ? ['--demo'] : ['.', '--demo'], env: { ...process.env, FAL_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/soak-profile-${Date.now()}`) } });
+const app = await electron.launch({ executablePath, args: executablePath ? ['--demo'] : ['.', '--demo'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/soak-profile-${Date.now()}`) } });
 const errors = []; app.on('window', w => w.on('pageerror', e => errors.push(e.message)));
 const samples = [], started = Date.now();
 try {

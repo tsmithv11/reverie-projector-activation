@@ -33,12 +33,13 @@ function render(s) {
   $('remaining').textContent = Math.ceil(s.remaining / 1000); $('progress').style.width = `${100 - s.remaining / (s.settings.duration * 10)}%`;
   $('pause').textContent = s.paused ? '▶  Resume rotation' : 'Ⅱ  Pause rotation'; $('rotation-label').textContent = s.paused ? 'Rotation paused' : 'Automatic rotation';
   $('fps').textContent = s.rendering.fps || '—'; $('camera-health').textContent = s.camera.state; $('detector-health').textContent = s.camera.detector === 'ready' ? `${s.camera.boxes} · ${s.camera.detectorMs} ms` : s.camera.detector;
-  $('quality-health').textContent = ['720p · reduced','900p · balanced','1080p · high'][s.rendering.quality || 0]; $('cloud-health').textContent = s.cloud.ready ? 'Live' : `Skipped · ${s.cloud.state}`;
+  $('quality-health').textContent = ['720p · reduced','900p · balanced','1080p · high'][s.rendering.quality || 0]; $('cloud-health').textContent = s.cloud.ready ? 'Live' : s.cloud.state === 'connecting' ? `Connecting · ${s.cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : `Skipped · ${s.cloud.state}`;
   $('health-note').textContent = s.rendering.failure || s.camera.message; $('camera-pill').textContent = s.camera.state === 'demo' ? 'SYNTHETIC CROWD' : `CAMERA ${s.camera.state.toUpperCase()}`;
-  $('key-status').textContent = s.cloud.configured ? 'Key configured' : 'Not configured'; $('key-path').textContent = `Stored privately: ${s.keyPath}`;
-  $('cloud-note').textContent = `${s.cloud.message}${s.cloud.code ? ` [${s.cloud.code} · ${s.cloud.phase || 'image check'}]` : ''} ${s.cloud.blockReason && s.cloud.blockReason !== s.cloud.message ? s.cloud.blockReason : ''} · ${s.cloud.count}/${s.cloud.cap} connection attempts this session. Maximum 12/hour. No automatic retries.`;
-  $('generate-robot').disabled = !s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming;
-  $('generate-robot').textContent = s.cloud.closing ? 'Closing connection…' : s.cloud.streaming ? `Stop live connection · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : 'Start live robot scene';
+  $('decart-key-status').textContent = s.cloud.providers.decart ? 'Key configured' : 'Not configured';
+  $('key-status').textContent = s.cloud.providers.fal ? 'Key configured' : 'Not configured'; $('key-path').textContent = `Stored privately: ${s.keyPath}`;
+  $('cloud-note').textContent = `${s.cloud.message}${s.cloud.code ? ` [${s.cloud.code} · ${s.cloud.phase || 'image check'}]` : ''} ${s.cloud.blockReason && s.cloud.blockReason !== s.cloud.message ? s.cloud.blockReason : ''} · ${s.cloud.count}/${s.cloud.cap} connection attempts this session. Maximum 12/hour. Decart first; one FAL backup attempt if needed.`;
+  $('generate-robot').disabled = !s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming && !(s.cloud.closing && s.cloud.state === 'connecting');
+  $('generate-robot').textContent = s.cloud.closing ? (s.cloud.state === 'connecting' ? 'Cancel FAL backup' : 'Closing connection…') : s.cloud.streaming ? `Stop live connection · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : 'Start live robot scene';
   document.querySelector('.privacy-pill').textContent = s.cloud.streaming ? '● Live camera → Lucy / Decart' : '● Local processing';
   $('robot-availability').textContent = s.cloud.display;
   const robotCard = document.querySelector('.scene-card[data-id=robots]');
@@ -47,10 +48,10 @@ function render(s) {
   for (const card of document.querySelectorAll('.scene-card')) { card.classList.toggle('active', card.dataset.id === s.active); card.classList.toggle('disabled', !s.settings.scenes.find(x => x.id === card.dataset.id).enabled); }
 }
 api.onState(render); render(state);
-for (const [id, name] of [['generate-robot','generate-robot'],['output','output'],['pause','pause'],['next','next'],['fullscreen','fullscreen'],['reconnect','reconnect'],['logs','logs'],['quit','quit']]) $(id).onclick = () => api.command(name === 'generate-robot' ? (state.cloud.streaming ? 'stop-robot' : state.cloud.canRetry ? 'retry-robot' : name) : name);
+for (const [id, name] of [['generate-robot','generate-robot'],['output','output'],['pause','pause'],['next','next'],['fullscreen','fullscreen'],['reconnect','reconnect'],['logs','logs'],['quit','quit']]) $(id).onclick = () => api.command(name === 'generate-robot' ? (state.cloud.streaming || state.cloud.closing ? 'stop-robot' : state.cloud.canRetry ? 'retry-robot' : name) : name);
 for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality'],['robot-minutes','robotMinutes'],['robot-cap','robotSessionCap']]) $(id).onchange = () => configure({ [key]: $(id).value });
 for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).onchange = () => configure({ [key]: $(id).checked });
 $('intensity').oninput = () => { $('intensity-value').textContent = `${$('intensity').value}%`; }; $('intensity').onchange = () => configure({ intensity: Number($('intensity').value) / 100 });
-$('save-key').onclick = async () => { try { await api.saveKey($('fal-key').value); $('fal-key').value = ''; $('notice').textContent = 'API key saved privately.'; } catch { $('notice').textContent = 'Could not save key. Check its format and the file permissions.'; } };
+for (const [button, input, provider] of [['save-key', 'fal-key', 'fal'], ['save-decart-key', 'decart-key', 'decart']]) $(button).onclick = async () => { try { await api.saveKey($(input).value, provider); $(input).value = ''; $('notice').textContent = 'API key saved privately.'; } catch { $('notice').textContent = 'Could not save key. Check its format and the file permissions.'; } };
 let previewBusy = false;
 setInterval(async () => { if (previewBusy || document.hidden) return; previewBusy = true; try { const image = await api.preview(); $('preview').style.display = image ? 'block' : 'none'; $('no-preview').style.display = image ? 'none' : 'block'; if (image) $('preview').src = image; else $('preview').removeAttribute('src'); } finally { previewBusy = false; } }, 1000);

@@ -20,7 +20,7 @@ await build({ stdin: { contents: `
   };
 `, resolveDir: process.cwd() }, bundle: true, format: 'esm', outfile: 'dist/garden-check.js' });
 const removeFixture = () => Promise.all(['dist/garden-check.html', 'dist/garden-check.js'].map(file => rm(file, { force: true })));
-const app = await electron.launch({ args: ['.', '--demo'], env: { ...process.env, FAL_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/garden-profile-${Date.now()}`) } }).catch(async error => { await removeFixture(); throw error; });
+const app = await electron.launch({ args: ['.', '--demo'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/garden-profile-${Date.now()}`) } }).catch(async error => { await removeFixture(); throw error; });
 const errors = [];
 app.on('window', win => win.on('pageerror', error => errors.push(error.message)));
 const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 120000);

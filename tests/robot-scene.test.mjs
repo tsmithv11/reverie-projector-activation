@@ -37,7 +37,7 @@ test('operator gets actionable missing-key, disabled, failure and spending-limit
   const settings = sanitize({ robotEnabled: true });
   const input = { settings, hasKey: false, gate: new CloudGate(), cloud: {}, ready: false, camera: 'live', frameFresh: true, now: 1e9 };
   assert.equal(robotStatus(input).state, 'missing-key');
-  assert.match(robotStatus(input).message, /No FAL key/); assert.equal(robotStatus(input).canGenerate, false);
+  assert.match(robotStatus(input).message, /No Decart or FAL key/); assert.equal(robotStatus(input).canGenerate, false);
   assert.equal(robotStatus({ ...input, settings: sanitize() }).state, 'disabled');
   input.hasKey = true; assert(robotStatus(input).canGenerate);
   input.gate.reserve(input.now, settings, true); input.gate.finish();

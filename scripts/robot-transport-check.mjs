@@ -2,8 +2,10 @@ import { _electron as electron } from 'playwright';
 import { decode, encode } from '@msgpack/msgpack';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/transport-profile-${Date.now()}`) } });
+const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/transport-profile-${Date.now()}`) } });
 const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 60000);
+const useDecart = process.argv.includes('--decart-fallback');
+let decartSockets = 0, decartPrompts = 0, decartClosed = false;
 let connected = false, promptReceived = false, movingInputFrames = false, prompts = 0, sockets = 0, offers = 0, socketClosed = false, closeCalls = null;
 try {
   const getWindow = async name => {
@@ -18,7 +20,19 @@ try {
   // signaling client. No socket or token request leaves this test process.
   closeCalls = { socket: 0, peer: 0 };
   await app.context().exposeBinding('testClosedMethod', (_source, kind) => { closeCalls[kind]++; });
+  await app.context().routeWebSocket('wss://api3.decart.ai/**', ws => {
+    decartSockets++;
+    ws.onClose(() => { decartClosed = true; setTimeout(() => ws.close({ code: 1000 }), 750); });
+    ws.onMessage(bytes => {
+      const message = JSON.parse(String(bytes));
+      if (message.type === 'prompt') {
+        assert.match(message.prompt, /robot/); assert.equal(message.enhance_prompt, false); decartPrompts++;
+        ws.send(JSON.stringify({ type: 'error', error: 'Concurrent session limit reached.' }));
+      }
+    });
+  });
   await app.context().routeWebSocket('wss://fal.run/**', ws => {
+    if (useDecart) assert(decartClosed, 'Decart must close before FAL starts');
     connected = true; sockets++;
     ws.onClose(() => {
       socketClosed = true;
@@ -83,21 +97,23 @@ try {
       }
     });
   });
-  await app.evaluate(() => { globalThis.fetch = async () => ({ ok: true, json: async () => 'mock-temporary-token' }); });
+  await app.evaluate(() => { globalThis.fetch = async url => ({ ok: true, json: async () => url.includes('decart.ai') ? { apiKey: 'mock-temporary-decart-token' } : 'mock-temporary-token' }); });
   const operator = await getWindow('operator');
   await operator.waitForFunction(() => document.querySelector('#camera-health').textContent === 'live');
-  await operator.evaluate(async () => {
+  await operator.evaluate(async useDecart => {
     await window.installation.saveKey('fake-key');
-    await window.installation.configure({ robotEnabled: true, robotSessionCap: 2, duration: 30, quality: 'high' });
+    if (useDecart) await window.installation.saveKey('fake-decart-key', 'decart');
+    await window.installation.configure({ robotEnabled: true, robotSessionCap: useDecart ? 3 : 2, duration: 30, quality: 'high' });
     await window.installation.command('generate-robot');
-  });
+  }, useDecart);
   if (process.argv.includes('--busy')) {
-    await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.includes('[SESSION_BUSY'), null, { timeout: 5000 });
+    await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.startsWith('FAL:') && document.querySelector('#cloud-note').textContent.includes('[SESSION_BUSY') && !document.querySelector('#generate-robot').textContent.includes('Closing'), null, { timeout: 5000 });
     const failed = await operator.evaluate(() => window.installation.state());
     assert.equal(failed.cloud.code, 'SESSION_BUSY'); assert(!failed.cloud.ready); assert(!failed.cloud.streaming); assert(!failed.cloud.canGenerate);
     assert.match(failed.cloud.blockReason, /Manual retry available/); assert.notEqual(failed.active, 'robots');
-    assert.equal(sockets, 1); assert.equal(prompts, 1); assert(offers <= 1); assert.equal(failed.cloud.count, 1);
-    console.log(JSON.stringify({ scenario: 'wire-provider-busy', preservedProviderError: true, skipped: true, automaticRequestsPaused: true, sockets, prompts, offers, providerRequests: 0 }));
+    assert.equal(sockets, 1); assert.equal(prompts, 1); assert(offers <= 1); assert.equal(failed.cloud.count, useDecart ? 2 : 1);
+    assert.equal(decartSockets, useDecart ? 1 : 0); assert.equal(decartPrompts, useDecart ? 1 : 0);
+    console.log(JSON.stringify({ scenario: useDecart ? 'both-providers-busy' : 'wire-provider-busy', decartSockets, decartPrompts, preservedProviderError: true, skipped: true, automaticRequestsPaused: true, sockets, prompts, offers, providerRequests: 0 }));
   } else {
   await operator.waitForFunction(() => document.querySelector('#cloud-health').textContent === 'Live', null, { timeout: 30000 });
   const audience = await getWindow('audience'), robot = await getWindow('robot');
@@ -107,7 +123,8 @@ try {
   const movingAudienceFrames = before !== await audience.locator('canvas').evaluate(c => c.toDataURL());
   const state = await operator.evaluate(() => window.installation.state());
   assert(connected); assert(promptReceived); assert(movingInputFrames); assert(movingAudienceFrames);
-  assert.equal(state.active, 'robots'); assert(state.cloud.ready); assert(state.cloud.streaming); assert(state.cloud.frames > 30); assert.equal(state.cloud.count, 1);
+  assert.equal(state.active, 'robots'); assert(state.cloud.ready); assert(state.cloud.streaming); assert(state.cloud.frames > 30); assert.equal(state.cloud.count, useDecart ? 2 : 1);
+  assert.equal(state.cloud.provider, 'fal'); assert.equal(decartSockets, useDecart ? 1 : 0); assert.equal(decartPrompts, useDecart ? 1 : 0);
   assert(state.rendering.fps > 20);
   assert.equal(prompts, 1, 'Exactly one initial prompt must be sent');
   assert.equal(sockets, 1, 'Exactly one signaling socket must be opened');
@@ -138,11 +155,11 @@ try {
   assert(closeCalls.peer > 0); assert(closeCalls.socket > 0);
   for (let i = 0; i < 55 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100));
   const stopped = await operator.evaluate(() => window.installation.state());
-  assert(robot.isClosed()); assert(socketClosed); assert(!stopped.cloud.closing); assert.equal(stopped.cloud.count, 1);
+  assert(robot.isClosed()); assert(socketClosed); assert(!stopped.cloud.closing); assert.equal(stopped.cloud.count, useDecart ? 2 : 1);
   assert(stopped.logs.some(line => line.includes('signaling close handshake completed')));
   }
 
-  console.log(JSON.stringify({ cspAllowsFALAddress: connected, promptReceived, movingInputFrames, movingAudienceFrames, continuousFrames: state.cloud.frames, audienceFps: state.rendering.fps, scenario: process.argv.includes('--stall') ? 'stalled-video' : 'scene-exit', gracefulCloseBeforeDestroy: closeCalls, socketClosed, prompts, sockets, offers, providerRequests: 0 }));
+  console.log(JSON.stringify({ decartSockets, decartPrompts, decartClosed, cspAllowsFALAddress: connected, promptReceived, movingInputFrames, movingAudienceFrames, continuousFrames: state.cloud.frames, audienceFps: state.rendering.fps, scenario: process.argv.includes('--stall') ? 'stalled-video' : 'scene-exit', gracefulCloseBeforeDestroy: closeCalls, socketClosed, prompts, sockets, offers, providerRequests: 0 }));
   }
 } finally {
   clearTimeout(watchdog); const stop = setTimeout(() => app.process().kill('SIGKILL'), 8000); await app.close(); clearTimeout(stop);

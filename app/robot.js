@@ -1,3 +1,4 @@
+import { decartModel, openDecartConnection } from './core/decart-connection.js';
 import { openLucySignaling } from './core/lucy-signaling.js';
 import { usableDimensions, usablePixels } from './core/robot-result.js';
 // This isolated service sends current camera frames and publishes current Lucy
@@ -26,38 +27,39 @@ async function offer(iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]) {
   for (const track of stream.getTracks()) peer.addTrack(track, stream);
   peer.onicecandidate = e => { if (!done && e.candidate) connection.send({ type: 'icecandidate', candidate: e.candidate.toJSON() }); };
   peer.onconnectionstatechange = () => { if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) fail('PEER_CONNECTION'); };
-  peer.ontrack = async e => {
-    if (remote || done) return;
-    remote = e.streams[0] || new MediaStream([e.track]); api.stage('receiving-video');
-    e.track.onended = () => fail('VIDEO_STALLED');
-    const video = document.querySelector('video'); video.srcObject = remote;
-    const output = document.createElement('canvas'); output.width = 960; output.height = 540;
-    const ctx = output.getContext('2d', { willReadFrequently: true });
-    let publishDeadline = 0;
-    const publish = async now => {
-      if (done) return;
-      // A decoded-frame callback, not a timer: a frozen remote stream cannot
-      // keep the main-process freshness watchdog alive by repainting old pixels.
-      if (now + .8 < publishDeadline) { video.requestVideoFrameCallback(publish); return; }
-      publishDeadline = (publishDeadline || now) + 1000 / 24;
-      if (publishDeadline < now) publishDeadline = now + 1000 / 24;
-      if (!usableDimensions(video.videoWidth, video.videoHeight)) { fail('INVALID_IMAGE'); return; }
-      ctx.fillStyle = '#271431'; ctx.fillRect(0, 0, 960, 540);
-      const scale = Math.min(960 / video.videoWidth, 540 / video.videoHeight);
-      ctx.drawImage(video, (960 - video.videoWidth * scale) / 2, (540 - video.videoHeight * scale) / 2, video.videoWidth * scale, video.videoHeight * scale);
-      const pixels = ctx.getImageData(0, 0, 960, 540).data;
-      if (!usablePixels(pixels)) { if (lastOutput) fail('INVALID_IMAGE'); else video.requestVideoFrameCallback(publish); return; }
-      lastOutput = Date.now();
-      try {
-        // Awaiting the acknowledgement bounds IPC to one frame in flight.
-        await api.publish({ sessionId: job.id, seq: ++outputSeq, width: 960, height: 540, pixels });
-        if (!done) video.requestVideoFrameCallback(publish);
-      } catch { fail('CLIENT_ERROR'); }
-    };
-    try { await video.play(); if (!done) video.requestVideoFrameCallback(publish); } catch { fail('CLIENT_ERROR'); }
-  };
+  peer.ontrack = e => receiveStream(e.streams[0] || new MediaStream([e.track]));
   const sdp = await peer.createOffer(); await peer.setLocalDescription(sdp);
   if (!done) connection.send({ type: 'offer', sdp: sdp.sdp });
+}
+async function receiveStream(incoming) {
+  if (remote || done || !incoming.getVideoTracks().length) return;
+  remote = incoming; api.stage('receiving-video');
+  for (const track of remote.getVideoTracks()) track.onended = () => fail('VIDEO_STALLED');
+  const video = document.querySelector('video'); video.srcObject = remote;
+  const output = document.createElement('canvas'); output.width = 960; output.height = 540;
+  const ctx = output.getContext('2d', { willReadFrequently: true });
+  let publishDeadline = 0;
+  const publish = async now => {
+    if (done) return;
+    // A decoded-frame callback, not a timer: a frozen remote stream cannot
+    // keep the main-process freshness watchdog alive by repainting old pixels.
+    if (now + .8 < publishDeadline) { video.requestVideoFrameCallback(publish); return; }
+    publishDeadline = (publishDeadline || now) + 1000 / 24;
+    if (publishDeadline < now) publishDeadline = now + 1000 / 24;
+    if (!usableDimensions(video.videoWidth, video.videoHeight)) { fail('INVALID_IMAGE'); return; }
+    ctx.fillStyle = '#271431'; ctx.fillRect(0, 0, 960, 540);
+    const scale = Math.min(960 / video.videoWidth, 540 / video.videoHeight);
+    ctx.drawImage(video, (960 - video.videoWidth * scale) / 2, (540 - video.videoHeight * scale) / 2, video.videoWidth * scale, video.videoHeight * scale);
+    const pixels = ctx.getImageData(0, 0, 960, 540).data;
+    if (!usablePixels(pixels)) { if (lastOutput) fail('INVALID_IMAGE'); else video.requestVideoFrameCallback(publish); return; }
+    lastOutput = Date.now();
+    try {
+      // Awaiting the acknowledgement bounds IPC to one frame in flight.
+      await api.publish({ sessionId: job.id, seq: ++outputSeq, width: 960, height: 540, pixels });
+      if (!done) video.requestVideoFrameCallback(publish);
+    } catch { fail('CLIENT_ERROR'); }
+  };
+  try { await video.play(); if (!done) video.requestVideoFrameCallback(publish); } catch { fail('CLIENT_ERROR'); }
 }
 async function receive(message) {
   if (done) return;
@@ -72,7 +74,7 @@ async function receive(message) {
 try {
   job = await api.job(); if (!job || done) throw Error('No session');
   const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
-  const canvas = document.createElement('canvas'); canvas.width = 1280; canvas.height = 720;
+  const canvas = document.createElement('canvas'); canvas.width = job.provider === 'decart' ? decartModel.width : 1280; canvas.height = job.provider === 'decart' ? decartModel.height : 720;
   const ctx = canvas.getContext('2d');
   const input = async () => {
     if (done || inputBusy) return; inputBusy = true;
@@ -81,7 +83,7 @@ try {
       inputSeq = f.seq; lastInput = Date.now();
       if (source.width !== f.width || source.height !== f.height) { source.width = f.width; source.height = f.height; }
       sourceCtx.putImageData(new ImageData(new Uint8ClampedArray(f.pixels), f.width, f.height), 0, 0);
-      ctx.drawImage(source, 0, 0, 1280, 720);
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
       stream?.getVideoTracks()[0]?.requestFrame?.();
     } finally { inputBusy = false; }
   };
@@ -95,8 +97,12 @@ try {
   api.stage('authenticating');
   const token = await api.token(); if (!token || done) throw Error('Authentication failed');
   api.stage('signaling');
-  connection = openLucySignaling({ token,
-    input: { prompt: 'Transform each visible person into a friendly realistic white ceramic and brushed-metal humanoid robot with dark mechanical joints and small cyan lights. Follow their movements continuously in realtime. Preserve the exact number of people, their poses, body sizes, positions, overlaps, perspective and framing. Preserve the original room, objects, lighting and background. No additional people or robots, no text, no camera movement.', enable_prompt_expansion: false },
+  const prompt = 'Transform each visible person into a friendly realistic white ceramic and brushed-metal humanoid robot with dark mechanical joints and small cyan lights. Follow their movements continuously in realtime. Preserve the exact number of people, their poses, body sizes, positions, overlaps, perspective and framing. Preserve the original room, objects, lighting and background. No additional people or robots, no text, no camera movement.';
+  if (job.provider === 'decart') {
+    api.stage('connecting-video');
+    connection = openDecartConnection({ token, stream, prompt, onRemoteStream: receiveStream, onError: fail, onStage: phase => api.stage(phase) });
+  } else connection = openLucySignaling({ token,
+    input: { prompt, enable_prompt_expansion: false },
     onResult: receive, onError: detail => fail('SIGNALING', detail),
     onDiagnostic: (event, detail) => api.diagnostic({ event, ...detail })
   });

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 if (!process.env.VISION_FIXTURE) throw Error('Set VISION_FIXTURE to a local PNG or JPEG containing visible people.');
 const bytes = await readFile(process.env.VISION_FIXTURE);
 const uri = `data:image/${process.env.VISION_FIXTURE.toLowerCase().endsWith('.png') ? 'png' : 'jpeg'};base64,${bytes.toString('base64')}`;
-const app = await electron.launch({ args: ['.', '--demo'], env: { ...process.env, FAL_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/vision-profile-${Date.now()}`) } });
+const app = await electron.launch({ args: ['.', '--demo'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/vision-profile-${Date.now()}`) } });
 try {
   let engine;
   while (!engine) { engine = app.windows().find(w => w.url().endsWith('/engine.html')); await new Promise(r => setTimeout(r, 100)); }

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 await mkdir('test-results', { recursive: true });
 const reports = [];
 for (const scenario of process.argv[2] ? [process.argv[2]] : ['scene-exit', 'paused-limit', 'connect-timeout', 'provider-busy']) {
-  const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/robot-${scenario}-${Date.now()}`) } });
+  const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/robot-${scenario}-${Date.now()}`) } });
   const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 60000);
   const errors = [];
   app.on('window', page => page.on('pageerror', e => errors.push(e.message)));

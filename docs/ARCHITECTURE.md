@@ -35,8 +35,8 @@ The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement
 | Bay and garden artwork canvas | 960×540 / 800×450 / 640×360; upscaled once inside the full-resolution portal; released when leaving artwork scenes |
 | Detection | 24 boxes; COCO person only, score ≥0.34 |
 | Motion | 24×14 grid; 48 strongest motion points; 24 occupied still points |
-| Small wonderful things | Six independently animated sprite characters, six poses each, bounded travel lanes and action cooldowns; 120 ms motion gate; water-only GPU pass |
-| Bubbles | 32 / 24 / 16; maximum lifetime 5 seconds |
+| Small wonderful things | Six independently animated sprite characters, six poses each; local horizontal motion response, bounded travel and cooldowns; 120 ms shared gate plus 180–360 ms local hold; grounded anticipation and one eased hop; water-only GPU pass |
+| Bubbles | 32 / 24 / 16; maximum lifetime 4.4 seconds; radius 1.3–2.7% of artwork width; immediate burst and up to 14/second at current motion points |
 | Bay ripples / splashes | 8 ripples fading within 1.4 seconds; 56 splash droplets fading within 0.65 seconds |
 | Garden | 112 / 80 / 48 plants; maximum lifetime 46 seconds; 12 butterflies; cached botanical artwork and foliage |
 | Transition | One old render snapshot, 1.4 seconds; no second active scene. Artwork entry uses an opaque scene-colored wash instead of the preceding camera scene. |

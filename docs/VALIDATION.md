@@ -203,3 +203,13 @@ Lucy starts disabled on every launch. Once enabled, both scenes remain eligible 
 - Tests use synthetic media and mocked providers. No paid provider requests were made for this update.
 
 Earlier observations above describe prior builds. These checks verify app lifecycle and media handling, not the provider's invoice or long-running service availability. Each requested live appearance can still incur provider usage, including billable setup; a Lucy-only rotating playlist is not free idle time.
+
+## Small wonderful things — movement response and visible bubbles, October 8, 2026
+
+Creatures now respond to nearby horizontal motion instead of all sharing one global trigger and destination. Travel follows changing input during an action; steady input no longer forces an automatic reversal. Stronger nearby motion produces larger travel and hops. Animation waits for every character sheet to load, preserves the neutral pose at action start, and gives each hop a grounded anticipation followed by one eased arc. Stopping before takeoff cancels the hop; an airborne creature finishes landing, with its splash timed to water contact.
+
+Bubbles now appear at the detected movement's horizontal and vertical location, with an initial burst after the 120 ms gate. Their radius increased from 0.4–1% to 1.3–2.7% of the artwork width, with stronger lavender edges, white highlights and cyan reflections. Emission scales with motion strength and intensity. The 32/24/16 quality caps remain; new gestures replace the oldest bubbles when the budget is full. Stillness stops new emissions and existing bubbles expire within 4.4 seconds.
+
+All 73 unit/regression tests pass, including delayed artwork, unchanged entrance poses, anticipation cancellation, separate moving groups, direction reversal, strength-scaled hops, landing timing and response at a full bubble budget. The final desktop rehearsal measured 30 fps at High, Balanced and Low, with no renderer errors. It confirmed three bubbles within 150 ms of synthetic motion, localized creature reactions, static idle artwork, and clean settling after camera loss. Results are in `test-results/wonderful-check.json`; the refreshed recording is `test-results/wonderful-motion-preview.mp4`. The Mac app and ZIP were rebuilt; the final packaged launch also ran at 30 fps with visible bubbles and no renderer errors, and its bundled audience code matches the tested source (`test-results/wonderful-motion-packaged.json`).
+
+These checks use synthetic input on this Mac. Projector visibility and the physical camera-to-audience relationship still need a walk-by rehearsal at the venue.

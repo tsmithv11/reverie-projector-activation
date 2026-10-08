@@ -134,14 +134,31 @@ try {
   assert(Object.values(assets.sprites).every(s => s.frames === 6));
   await fixture.evaluate(() => fixtureStep(3));
   await fixture.screenshot({ path: 'test-results/wonderful-idle.png' });
-  await fixture.evaluate(() => fixtureStep(1.3, true, .8));
+  await fixture.evaluate(() => fixtureStep(1.3, true, .4));
   await fixture.screenshot({ path: 'test-results/wonderful-jump.png' });
   const jumping = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
-  assert(jumping.lift > .9);
+  assert(jumping.lift > .65);
   await fixture.evaluate(() => fixtureStep(15));
   assert.equal(await fixture.evaluate(() => fixtureScene.bubbles.length), 0);
   assert(await fixture.evaluate(() => fixtureScene.creatures.every(c => !c.action)));
   await fixture.screenshot({ path: 'test-results/wonderful-settled.png' });
+  const response = await fixture.evaluate(() => {
+    fixtureScene.activate(); fixtureStep(.15, true, .12);
+    const immediateBubbles = fixtureScene.bubbles.length;
+    const initialPoses = fixtureScene.creatures.map(c => c.pose());
+    fixtureStep(.85, true, .12);
+    const localActions = fixtureScene.creatures.filter(c => c.action).map(c => c.spec.id);
+    const radii = fixtureScene.bubbles.map(b => b.r);
+    fixtureRender();
+    return { immediateBubbles, initialPoses, localActions, radii };
+  });
+  assert(response.immediateBubbles >= 2);
+  assert(response.initialPoses.every(p => p.frame === 0 && p.lift === 0));
+  assert(response.localActions.includes('antenna'));
+  assert(!response.localActions.includes('blue') && !response.localActions.includes('green'));
+  assert(response.radii.every(r => r >= .013));
+  await fixture.screenshot({ path: 'test-results/wonderful-motion-response.png' });
+  await fixture.evaluate(() => fixtureStep(15));
   const animation = await fixture.evaluate(() => {
     const c = document.createElement('canvas'); c.width = 960; c.height = 540;
     const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -207,7 +224,7 @@ try {
   await fixture.screenshot({path:'test-results/wonderful-gpu-fallback.png'});
   await fixture.evaluate(() => fixtureScene.cleanup());
   assert.deepEqual(errors, []);
-  const result = { assets, packets, animation, balanced: balanced.rendering, restored: restored.rendering, cameraDraws: await audience.evaluate(() => window.wonderfulCameraDraws), cameraUploads: await audience.evaluate(() => window.wonderfulCameraUploads), high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, jumping, errors };
+  const result = { assets, packets, animation, response, balanced: balanced.rendering, restored: restored.rendering, cameraDraws: await audience.evaluate(() => window.wonderfulCameraDraws), cameraUploads: await audience.evaluate(() => window.wonderfulCameraUploads), high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, jumping, errors };
   await writeFile('test-results/wonderful-check.json', JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 } finally {

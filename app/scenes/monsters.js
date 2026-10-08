@@ -28,28 +28,39 @@ export default class Monsters extends Scene {
   activate() {
     this.creatures = CAST.map((spec, i) => new CreatureAnimation(spec, i));
     this.bubbles = []; this.ripples = []; this.splashes = [];
-    this.spawn = 0; this.motionHold = 0; this.elapsed = 0;
-    this.activity = 0; this.animationTime = 0; this.focus = .5;
+    this.spawn = 0; this.motionHold = 0; this.elapsed = 0; this.wasMoving = false;
+    this.activity = 0; this.animationTime = 0;
   }
 
   update({ dt, analysis, intensity = .7, quality = 2 }) {
     dt = clamp(dt, 0, .1); intensity = clamp(intensity); this.elapsed += dt;
-    const points = (analysis?.motion?.points || []).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && (p.strength ?? 1) > .045).slice(0, 48);
+    // Do not spend the resting/anticipation frames while artwork is still
+    // loading, which would reveal a newly loaded creature already mid-jump.
+    if (this.background && (!this.background.naturalWidth || Object.keys(this.sprites).length < CAST.length)) {
+      this.motionHold = 0; return;
+    }
+    const points = (analysis?.motion?.points || []).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.strength ?? 1) && (p.strength ?? 1) > .045).slice(0, 48);
     this.motionHold = points.length ? this.motionHold + dt : 0;
     const moving = this.motionHold >= .12 && intensity > 0;
     const weight = points.reduce((sum, p) => sum + clamp(p.strength ?? 1), 0);
     const strength = weight / Math.max(1, points.length);
-    if (weight) {
-      const target = points.reduce((sum, p) => sum + clamp(p.x) * clamp(p.strength ?? 1), 0) / weight;
-      this.focus += (target - this.focus) * (1 - Math.exp(-dt * 5));
-    }
     const target = moving ? intensity * (.35 + .65 * clamp(strength * 2)) : 0;
     this.activity += (target - this.activity) * (1 - Math.exp(-dt * (target > this.activity ? 4 : 1.5)));
     if (target === 0 && this.activity < .001) this.activity = 0;
     this.animationTime += dt * this.activity;
 
     for (const creature of this.creatures) {
-      const event = creature.update(dt, { moving, focus: this.focus, strength, intensity });
+      // React to the audience beside this creature. Separate moving groups
+      // retain separate responses instead of collapsing into one centroid.
+      let localWeight = 0, localX = 0, localStrength = 0;
+      for (const p of points) {
+        const proximity = clamp(1 - Math.abs(clamp(p.x) - creature.spec.x) / .3);
+        const influence = proximity * clamp(p.strength ?? 1);
+        localWeight += influence; localX += clamp(p.x) * influence;
+        localStrength = Math.max(localStrength, influence);
+      }
+      const event = creature.update(dt, { moving: moving && localStrength > .035,
+        focus: localWeight ? localX / localWeight : creature.x, strength: localStrength, intensity });
       if (event && creature.spec.action !== 'wave') {
         this.addRipple(creature.x, creature.spec.y, event === 'land' ? .045 : .026);
         if (event === 'land' && ['bound', 'skip', 'leap'].includes(creature.spec.action)) {
@@ -59,14 +70,22 @@ export default class Monsters extends Scene {
     }
     const cap = [16, 24, 32][quality] ?? 24;
     if (moving) {
-      this.spawn = Math.min(2, this.spawn + dt * (1 + intensity * 4));
-      while (this.spawn >= 1 && this.bubbles.length < cap) {
-        this.bubbles.push({ x: .12 + this.focus * .7 + (Math.random() - .5) * .2,
-          y: .80 + Math.random() * .08, r: .004 + Math.random() * .006, age: 0, life: 3 + Math.random() * 2,
-          speed: .055 + Math.random() * .03, phase: Math.random() * TAU });
+      // Give movement an immediate visible response, then keep emitting at
+      // the actual motion points (including their height in the camera view).
+      if (!this.wasMoving) this.spawn = 1 + Math.ceil(intensity * 2);
+      this.spawn = Math.min(3, this.spawn + dt * intensity * (5 + clamp(strength * 2) * 9));
+      while (this.spawn >= 1) {
+        // Keep the newest gesture visible even when the effect budget is full.
+        if (this.bubbles.length >= cap) this.bubbles.shift();
+        let pick = Math.random() * weight;
+        const source = points.find(p => (pick -= clamp(p.strength ?? 1)) <= 0) || points[points.length - 1];
+        this.bubbles.push({ x: clamp(source.x + (Math.random() - .5) * .03, .035, .965),
+          y: clamp(source.y + (Math.random() - .5) * .03, .08, .92), r: .013 + Math.random() * .014, age: 0, life: 2.8 + Math.random() * 1.6,
+          speed: .065 + Math.random() * .025, phase: Math.random() * TAU });
         this.spawn--;
       }
     } else this.spawn = 0;
+    this.wasMoving = moving;
     for (const b of this.bubbles) { b.age += dt; b.y -= dt * b.speed; b.x += Math.sin(this.elapsed + b.phase) * dt * .008; }
     this.bubbles = this.bubbles.filter(b => b.age < b.life).slice(-cap);
     for (const r of this.ripples) r.age += dt;
@@ -137,19 +156,20 @@ export default class Monsters extends Scene {
   drawBubble(ctx, bubble, w, h) {
     const x = bubble.x * w, y = bubble.y * h, r = bubble.r * w;
     ctx.save();
-    ctx.globalAlpha = Math.min(1, bubble.age * 3, (bubble.life - bubble.age) * 1.5) * .78;
+    ctx.globalAlpha = clamp(Math.min(bubble.age * 8, (bubble.life - bubble.age) * 2));
     const fill = ctx.createRadialGradient(x - r * .3, y - r * .35, r * .1, x, y, r);
-    fill.addColorStop(0, '#fff2fd04'); fill.addColorStop(.72, '#b9deff0a'); fill.addColorStop(1, '#ffe3fc66');
+    fill.addColorStop(0, '#fff8ff28'); fill.addColorStop(.65, '#baeaff30'); fill.addColorStop(.88, '#d7adff75'); fill.addColorStop(1, '#fff0ffc0');
     ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
-    ctx.lineWidth = Math.max(.7, w * .0006);
-    ctx.strokeStyle = '#fce9ffb8'; ctx.stroke();
-    ctx.strokeStyle = '#fff9f4df'; ctx.lineWidth *= 1.8;
+    ctx.lineWidth = Math.max(1.7, w * .0018);
+    ctx.strokeStyle = '#7050b6cc'; ctx.stroke();
+    ctx.strokeStyle = '#fffaff'; ctx.lineWidth *= 1.25; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.arc(x, y, r * .81, 3.6, 4.8); ctx.stroke();
-    ctx.strokeStyle = '#a7dbffb0'; ctx.lineWidth *= .65;
-    ctx.beginPath(); ctx.arc(x, y, r * .86, .3, 1.6); ctx.stroke(); ctx.restore();
+    ctx.strokeStyle = '#83eeff'; ctx.lineWidth *= .8;
+    ctx.beginPath(); ctx.arc(x, y, r * .86, .3, 1.6); ctx.stroke();
+    ctx.fillStyle = '#ffffffed'; ctx.beginPath(); ctx.ellipse(x - r * .32, y - r * .43, r * .14, r * .08, -.6, 0, TAU); ctx.fill(); ctx.restore();
   }
 
-  deactivate() { this.creatures = []; this.bubbles = []; this.ripples = []; this.splashes = []; this.spawn = 0; this.motionHold = 0; this.activity = 0; this.animationTime = 0; }
+  deactivate() { this.creatures = []; this.bubbles = []; this.ripples = []; this.splashes = []; this.spawn = 0; this.motionHold = 0; this.activity = 0; this.animationTime = 0; this.wasMoving = false; }
   cleanup() {
     this.deactivate(); this.disposed = true; this.artwork?.cleanup(); this.artwork = null;
     for (const image of [this.background, ...Object.values(this.images || {})]) if (image) { image.onload = null; image.onerror = null; image.removeAttribute('src'); }

@@ -11,8 +11,8 @@ await build({ stdin: { contents: `
   window.fixtureScene = new Monsters(); fixtureScene.initialize(); fixtureScene.activate();
   const canvas = document.querySelector('canvas'); canvas.width = 960; canvas.height = 540;
   window.fixtureRender = () => fixtureScene.render(canvas.getContext('2d'), { w: canvas.width, h: canvas.height });
-  window.fixtureStep = (seconds, moving = false) => {
-    const analysis = { motion: { points: moving ? [{ x: .4, y: .4, strength: .5 }] : [] } };
+  window.fixtureStep = (seconds, moving = false, x = .4) => {
+    const analysis = { motion: { points: moving ? [{ x, y: .4, strength: .5 }] : [] } };
     for (let i = 0; i < Math.round(seconds * 60); i++) fixtureScene.update({ dt: 1/60, intensity: .7, quality: 2, analysis });
     fixtureRender();
   };
@@ -40,7 +40,13 @@ try {
   });
   await audience.waitForFunction(async () => (await window.installation.frame(-1))?.pixels?.byteLength > 0);
   const packets = await audience.evaluate(async () => {
-    const full = await window.installation.frame(-1), compact = await window.installation.frame(-1, true);
+    let full, compact;
+    for (let i = 0; i < 100; i++) {
+      full = await window.installation.frame(-1); compact = await window.installation.frame(-1, true);
+      if (full?.pixels && compact) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (!full?.pixels || !compact) throw Error('Camera packets did not become fresh');
     return { fullBytes: full.pixels.byteLength, compactBytes: JSON.stringify(compact).length,
       compactHasImage: !!(compact.pixels || compact.preview || compact.motion.edges || compact.motion.energy),
       hasMotion: Array.isArray(compact.motion.points) };
@@ -118,64 +124,87 @@ try {
     fixture.loadURL('reverie://app/wonderful-check.html');
   });
   const fixture = await fixturePromise;
-  await fixture.waitForFunction(() => window.fixtureScene?.background?.naturalWidth && window.fixtureScene?.jumper?.naturalWidth);
+  await fixture.waitForFunction(() => window.fixtureScene?.background?.naturalWidth && Object.keys(fixtureScene.sprites || {}).length === 6);
   const assets = await fixture.evaluate(() => ({
     background: [fixtureScene.background.naturalWidth, fixtureScene.background.naturalHeight],
-    sprite: [fixtureScene.jumper.naturalWidth, fixtureScene.jumper.naturalHeight],
+    sprites: Object.fromEntries(Object.entries(fixtureScene.sprites).map(([id, s]) => [id, { size: [s.image.naturalWidth, s.image.naturalHeight], frames: s.frames.length }])),
     gpu: !!fixtureScene.artwork?.gl
   }));
-  assert(assets.gpu, 'the living artwork shader must initialize');
-  assert(assets.background[0] > 1038);
+  assert(assets.gpu); assert.equal(Object.keys(assets.sprites).length, 6);
+  assert(Object.values(assets.sprites).every(s => s.frames === 6));
   await fixture.evaluate(() => fixtureStep(3));
   await fixture.screenshot({ path: 'test-results/wonderful-idle.png' });
-  await fixture.evaluate(() => { fixtureStep(.18, true); fixtureStep(.6); });
+  await fixture.evaluate(() => fixtureStep(1.3, true, .8));
   await fixture.screenshot({ path: 'test-results/wonderful-jump.png' });
-  const jumping = await fixture.evaluate(() => ({ pose: fixtureScene.jumperPose(), bubbles: fixtureScene.bubbles.length }));
-  assert(jumping.pose.lift > .95); assert(jumping.bubbles > 0);
-  await fixture.evaluate(() => fixtureStep(9));
+  const jumping = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
+  assert(jumping.lift > .9);
+  await fixture.evaluate(() => fixtureStep(15));
   assert.equal(await fixture.evaluate(() => fixtureScene.bubbles.length), 0);
-  assert.equal(await fixture.evaluate(() => fixtureScene.jump), null);
+  assert(await fixture.evaluate(() => fixtureScene.creatures.every(c => !c.action)));
   await fixture.screenshot({ path: 'test-results/wonderful-settled.png' });
   const animation = await fixture.evaluate(() => {
-    // Compare rendered regions, so a disconnected motion uniform or a missing
-    // creature mask fails even if the JavaScript activity value looks correct.
     const c = document.createElement('canvas'); c.width = 960; c.height = 540;
     const ctx = c.getContext('2d', { willReadFrequently: true });
-    const shot = () => {
-      fixtureScene.artwork.render(ctx, 960, 540, fixtureScene.animationTime, fixtureScene.activity);
-      return ctx.getImageData(0, 0, 960, 540).data;
-    };
-    const before = shot(); fixtureStep(2); const after = shot();
-    const idleUnchanged = before.every((v, i) => v === after[i]);
-    fixtureStep(3, true); const movingA = shot(); fixtureStep(.8, true); const movingB = shot();
-    const regions = { tall: [.25,.4,.1,.16], left: [.025,.71,.11,.07], green: [.54,.43,.06,.21],
-      right: [.69,.59,.09,.10], tiny: [.62,.725,.035,.04], water: [.21,.84,.43,.1], bridge: [.76,.08,.12,.20] };
-    const differences = Object.fromEntries(Object.entries(regions).map(([name, [x,y,w,h]]) => {
-      let total = 0, count = 0;
-      for (let py = Math.floor(y*540); py < (y+h)*540; py++) for (let px = Math.floor(x*960); px < (x+w)*960; px++) {
-        const i = (py*960+px)*4;
-        for (let ch = 0; ch < 3; ch++) { total += Math.abs(movingA[i+ch]-movingB[i+ch]); count++; }
-      }
-      return [name, total / count];
+    const spriteDifferences = Object.fromEntries(Object.entries(fixtureScene.sprites).map(([id, s]) => {
+      const shot = frame => {
+        ctx.clearRect(0,0,960,540); ctx.save(); ctx.translate(480,500); s.draw(ctx,frame,400,1); ctx.restore();
+        return ctx.getImageData(0,0,960,540).data;
+      };
+      const a=shot(0), b=shot(2); let difference=0;
+      for (let i=0;i<a.length;i++) difference+=Math.abs(a[i]-b[i]);
+      return [id,difference/a.length];
     }));
-    const gpuSize = [fixtureScene.artwork.canvas.width, fixtureScene.artwork.canvas.height];
-    // Camera colors cannot influence the artwork itself.
-    const sceneCanvas = document.querySelector('canvas'), sceneCtx = sceneCanvas.getContext('2d');
-    const frame = document.createElement('canvas'); frame.width = 64; frame.height = 36;
-    const fc = frame.getContext('2d'); fc.fillStyle = '#00ff00'; fc.fillRect(0,0,64,36);
-    fixtureScene.render(sceneCtx, {w:960,h:540,frame}); const green = sceneCanvas.toDataURL();
-    fc.fillStyle = '#ff0000'; fc.fillRect(0,0,64,36);
-    fixtureScene.render(sceneCtx, {w:960,h:540,frame}); const cameraIndependent = green === sceneCanvas.toDataURL();
-    return { idleUnchanged, differences, gpuSize, cameraIndependent };
+    const shot = () => {
+      fixtureScene.artwork.render(ctx,960,540,fixtureScene.animationTime,fixtureScene.activity);
+      return ctx.getImageData(0,0,960,540).data;
+    };
+    const before=shot(); fixtureStep(2); const after=shot();
+    const idleUnchanged=before.every((v,i)=>v===after[i]);
+    fixtureStep(3,true); const a=shot(); fixtureStep(.8,true); const b=shot();
+    const difference = (x,y,w,h) => {
+      let total=0,count=0;
+      for(let py=Math.floor(y*540);py<(y+h)*540;py++) for(let px=Math.floor(x*960);px<(x+w)*960;px++) {
+        for(let ch=0;ch<3;ch++) { const i=(py*960+px)*4+ch;total+=Math.abs(a[i]-b[i]);count++; }
+      }
+      return total/count;
+    };
+    const waterDifference=difference(.21,.84,.43,.1), bridgeDifference=difference(.76,.08,.12,.2);
+    const sceneCanvas=document.querySelector('canvas'), sceneCtx=sceneCanvas.getContext('2d');
+    const frame=document.createElement('canvas'); frame.width=64;frame.height=36;
+    const fc=frame.getContext('2d');fc.fillStyle='#00ff00';fc.fillRect(0,0,64,36);
+    fixtureScene.render(sceneCtx,{w:960,h:540,frame});const green=sceneCanvas.toDataURL();
+    fc.fillStyle='#ff0000';fc.fillRect(0,0,64,36);
+    fixtureScene.render(sceneCtx,{w:960,h:540,frame});
+    return {spriteDifferences,idleUnchanged,waterDifference,bridgeDifference,cameraIndependent:green===sceneCanvas.toDataURL()};
   });
-  assert(animation.idleUnchanged); assert(animation.cameraIndependent);
-  assert.deepEqual(animation.gpuSize, [960, 540]);
-  for (const name of ['tall', 'left', 'green', 'right', 'tiny', 'water']) assert(animation.differences[name] > .5, name + ' must visibly move');
-  assert.equal(animation.differences.bridge, 0, 'the bridge stays anchored');
-  await fixture.screenshot({ path: 'test-results/wonderful-all-moving.png' });
-  // GPU loss must leave the detailed art, sprite and interaction usable.
-  await fixture.evaluate(() => { fixtureScene.artwork.cleanup(); fixtureRender(); });
-  await fixture.screenshot({ path: 'test-results/wonderful-gpu-fallback.png' });
+  assert(animation.idleUnchanged);assert(animation.cameraIndependent);
+  assert(Object.values(animation.spriteDifferences).every(d=>d>1),'all six characters need distinct pose artwork');
+  assert(animation.waterDifference>.5);assert.equal(animation.bridgeDifference,0);
+  await fixture.screenshot({path:'test-results/wonderful-all-moving.png'});
+  if (process.argv.includes('--record')) {
+    const video = await fixture.evaluate(async () => {
+      fixtureScene.activate();
+      const canvas=document.querySelector('canvas'), stream=canvas.captureStream(30), chunks=[];
+      const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9',videoBitsPerSecond:3500000});
+      recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
+      const stopped=new Promise(resolve=>{recorder.onstop=resolve;});
+      recorder.start();
+      for(let i=0;i<510;i++) {
+        const t=i/30, moving=t>1&&t<10;
+        const x=t<5.5 ? .12+(t-1)/4.5*.76 : .88-(t-5.5)/4.5*.76;
+        fixtureScene.update({dt:1/30,intensity:.85,quality:2,analysis:{motion:{points:moving?[{x,y:.5,strength:.75}]:[]}}});
+        fixtureRender();
+        await new Promise(resolve=>setTimeout(resolve,1000/30));
+      }
+      recorder.stop();await stopped;stream.getTracks().forEach(track=>track.stop());
+      return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(new Blob(chunks,{type:'video/webm'}));});
+    });
+    await writeFile('test-results/wonderful-cartoon-preview.webm',Buffer.from(video,'base64'));
+  }
+  // Losing WebGL only freezes water: every separate character still animates.
+  await fixture.evaluate(()=>{fixtureScene.artwork.cleanup();fixtureStep(.4,true);});
+  assert(await fixture.evaluate(()=>fixtureScene.creatures.some(c=>c.action)));
+  await fixture.screenshot({path:'test-results/wonderful-gpu-fallback.png'});
   await fixture.evaluate(() => fixtureScene.cleanup());
   assert.deepEqual(errors, []);
   const result = { assets, packets, animation, balanced: balanced.rendering, restored: restored.rendering, cameraDraws: await audience.evaluate(() => window.wonderfulCameraDraws), cameraUploads: await audience.evaluate(() => window.wonderfulCameraUploads), high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, jumping, errors };

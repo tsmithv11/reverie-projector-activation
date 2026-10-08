@@ -1,5 +1,5 @@
-// Animate the five painted creatures and water in one GPU pass. The shared
-// motion envelope comes from the camera; the bridge and shoreline stay fixed.
+// Animate only the water in the empty bay. Characters use separate authored
+// pose sequences and are never passed through this texture displacement.
 const vertex = `
 attribute vec2 position;
 varying vec2 uv;
@@ -16,32 +16,14 @@ varying vec2 uv;
 float region(vec2 p, vec2 center, vec2 radius) {
   return 1.0 - smoothstep(0.55, 1.0, length((p - center) / radius));
 }
-vec2 creature(vec2 p, vec2 center, vec2 radius, float phase, float speed, float amplitude) {
-  float mask = region(p, center, radius);
-  float bob = sin(time * speed + phase);
-  float sway = sin(time * speed * 0.5 + phase);
-  // A broad, soft mask moves each head/body together and lets fins flex, while
-  // blending the displacement back into its own painted surroundings.
-  float upperBody = clamp((center.y + radius.y - p.y) / radius.y, 0.0, 1.5);
-  return vec2(sway * amplitude * 0.65 * upperBody + (p.x - center.x) * bob * 0.025,
-    bob * amplitude + (p.y - center.y) * sway * 0.025) * mask * activity;
-}
 void main() {
   vec2 p = uv;
-  vec2 drift = creature(p, vec2(0.278, 0.455), vec2(0.17, 0.28), 0.0, 1.4, 0.010);
-  drift += creature(p, vec2(0.080, 0.710), vec2(0.11, 0.16), 1.8, 1.8, 0.013);
-  drift += creature(p, vec2(0.563, 0.525), vec2(0.070, 0.20), 3.2, 1.2, 0.009);
-  drift += creature(p, vec2(0.740, 0.645), vec2(0.085, 0.11), 4.7, 1.6, 0.014);
-  drift += creature(p, vec2(0.639, 0.748), vec2(0.038, 0.046), 2.4, 2.2, 0.010);
-  // Cover the entire exposed bay, with soft exclusions for creatures, the
-  // central rock and the diagonal shore. Waves run through the reflections.
-  float water = smoothstep(0.59, 0.72, p.y);
+  vec2 drift = vec2(0.0);
+  // The plate contains no characters. Only open water is displaced; all six
+  // characters are separate pose sprites drawn after this pass.
+  float water = smoothstep(0.60, 0.72, p.y);
   water *= 1.0 - smoothstep(0.93, 1.0, p.x + (p.y - 0.7) * 0.8);
-  water *= 1.0 - region(p, vec2(0.278, 0.455), vec2(0.18, 0.30));
-  water *= 1.0 - region(p, vec2(0.080, 0.700), vec2(0.12, 0.17));
-  water *= 1.0 - region(p, vec2(0.533, 0.545), vec2(0.12, 0.22));
-  water *= 1.0 - region(p, vec2(0.740, 0.645), vec2(0.09, 0.115));
-  water *= 1.0 - region(p, vec2(0.639, 0.748), vec2(0.04, 0.05));
+  water *= 1.0 - region(p, vec2(0.533, 0.565), vec2(0.105, 0.175));
   float wave = sin(p.y * 125.0 + time * 1.8) + sin(p.x * 45.0 - time * 1.2) * 0.45;
   drift += vec2(wave * 0.0045,
     sin(p.x * 70.0 + p.y * 80.0 - time * 1.6) * 0.0025) * water * activity;

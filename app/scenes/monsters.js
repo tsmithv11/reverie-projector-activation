@@ -1,131 +1,137 @@
 import { Scene } from './base.js';
 import { LivingArtwork } from './living-artwork.js';
+import { CAST, CreatureAnimation } from './creature-animation.js';
+import { CharacterSprites } from './character-sprites.js';
 
 const ART = 'scenes/small-wonderful-things/';
 const TAU = Math.PI * 2;
-const JUMP_SECONDS = 1.35;
-const HOME = { x: .391, y: .727 };
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, n));
 
 export default class Monsters extends Scene {
   initialize() {
-    this.disposed = false;
-    this.background = new Image(); this.jumper = new Image();
+    this.disposed = false; this.images = {}; this.sprites = {};
+    this.background = new Image();
     this.background.onload = () => { if (!this.disposed) this.artwork = new LivingArtwork(this.background); };
     this.background.onerror = () => { this.assetError = true; };
-    this.jumper.onerror = () => { this.assetError = true; };
-    this.background.src = ART + 'bay.png'; this.jumper.src = ART + 'jumper.png';
+    this.background.src = ART + 'bay-empty.png';
+    for (const { id } of CAST) {
+      const image = this.images[id] = new Image();
+      image.onload = () => {
+        if (this.disposed) return;
+        try { this.sprites[id] = new CharacterSprites(image); } catch { this.assetError = true; }
+      };
+      image.onerror = () => { this.assetError = true; };
+      image.src = ART + id + '-poses.png';
+    }
   }
 
   activate() {
-    this.bubbles = []; this.ripples = []; this.spawn = 0; this.motionHold = 0;
-    this.jump = null; this.cooldown = 0; this.elapsed = 0;
-    this.activity = 0; this.animationTime = 0;
+    this.creatures = CAST.map((spec, i) => new CreatureAnimation(spec, i));
+    this.bubbles = []; this.ripples = []; this.splashes = [];
+    this.spawn = 0; this.motionHold = 0; this.elapsed = 0;
+    this.activity = 0; this.animationTime = 0; this.focus = .5;
   }
 
   update({ dt, analysis, intensity = .7, quality = 2 }) {
-    dt = clamp(dt, 0, .1); intensity = clamp(intensity, 0, 1);
-    this.elapsed += dt;
-    const cap = [36, 64, 90][quality] ?? 64;
-    const points = (analysis?.motion?.points || []).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && (p.strength ?? 1) > .045);
-    const moving = points.length > 0;
-    this.cooldown = Math.max(0, this.cooldown - dt);
-    this.motionHold = moving ? this.motionHold + dt : 0;
-    // One shared envelope wakes every creature and the bay, even when motion
-    // is confined to one part of the camera. Ease out instead of snapping still.
-    const strength = points.reduce((sum, p) => sum + clamp(p.strength ?? 1, 0, 1), 0) / Math.max(1, points.length);
-    const target = this.motionHold >= .12 ? intensity * (.35 + .65 * clamp(strength * 2, 0, 1)) : 0;
+    dt = clamp(dt, 0, .1); intensity = clamp(intensity); this.elapsed += dt;
+    const points = (analysis?.motion?.points || []).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && (p.strength ?? 1) > .045).slice(0, 48);
+    this.motionHold = points.length ? this.motionHold + dt : 0;
+    const moving = this.motionHold >= .12 && intensity > 0;
+    const weight = points.reduce((sum, p) => sum + clamp(p.strength ?? 1), 0);
+    const strength = weight / Math.max(1, points.length);
+    if (weight) {
+      const target = points.reduce((sum, p) => sum + clamp(p.x) * clamp(p.strength ?? 1), 0) / weight;
+      this.focus += (target - this.focus) * (1 - Math.exp(-dt * 5));
+    }
+    const target = moving ? intensity * (.35 + .65 * clamp(strength * 2)) : 0;
     this.activity += (target - this.activity) * (1 - Math.exp(-dt * (target > this.activity ? 4 : 1.5)));
     if (target === 0 && this.activity < .001) this.activity = 0;
     this.animationTime += dt * this.activity;
 
-    if (this.jump) {
-      this.jump.age += dt;
-      if (this.jump.age >= JUMP_SECONDS) {
-        this.jump = null;
-        this.cooldown = 1.6;
-        this.addRipple(HOME.x, HOME.y, .045);
+    for (const creature of this.creatures) {
+      const event = creature.update(dt, { moving, focus: this.focus, strength, intensity });
+      if (event && creature.spec.action !== 'wave') {
+        this.addRipple(creature.x, creature.spec.y, event === 'land' ? .045 : .026);
+        if (event === 'land' && ['bound', 'skip', 'leap'].includes(creature.spec.action)) {
+          for (let i = 0; i < 7; i++) this.splashes.push({ x: creature.x, y: creature.spec.y, age: 0, vx: (i - 3) * .035, vy: -.14 - Math.random() * .10, r: .0015 + Math.random() * .002 });
+        }
       }
     }
-    // Brief noise cannot trigger a hop. Continuing motion can trigger another
-    // only after landing and a rest, and stillness never schedules a new hop.
-    if (!this.jump && this.cooldown === 0 && this.motionHold >= .12 && intensity > 0) {
-      this.jump = { age: 0, height: .02 + intensity * .025 };
-      this.addRipple(HOME.x, HOME.y, .032);
-    }
-
-    if (moving && intensity > 0) {
-      this.spawn = Math.min(3, this.spawn + dt * (4 + intensity * 12));
+    const cap = [16, 24, 32][quality] ?? 24;
+    if (moving) {
+      this.spawn = Math.min(2, this.spawn + dt * (1 + intensity * 4));
       while (this.spawn >= 1 && this.bubbles.length < cap) {
-        const point = points[Math.floor(Math.random() * points.length)];
-        this.bubbles.push({
-          x: clamp(.09 + point.x * .76 + (Math.random() - .5) * .025, .06, .9),
-          y: .73 + clamp(point.y, 0, 1) * .15,
-          r: .006 + Math.random() * .012, age: 0, life: 4 + Math.random() * 3,
-          speed: .045 + Math.random() * .032, phase: Math.random() * TAU
-        });
+        this.bubbles.push({ x: .12 + this.focus * .7 + (Math.random() - .5) * .2,
+          y: .80 + Math.random() * .08, r: .004 + Math.random() * .006, age: 0, life: 3 + Math.random() * 2,
+          speed: .055 + Math.random() * .03, phase: Math.random() * TAU });
         this.spawn--;
       }
     } else this.spawn = 0;
-    for (const bubble of this.bubbles) {
-      bubble.age += dt; bubble.y -= dt * bubble.speed;
-      bubble.x += Math.sin(this.elapsed * 1.1 + bubble.phase) * dt * .007;
-    }
-    this.bubbles = this.bubbles.filter(b => b.age < b.life && b.y > -.04).slice(-cap);
-    for (const ripple of this.ripples) ripple.age += dt;
+    for (const b of this.bubbles) { b.age += dt; b.y -= dt * b.speed; b.x += Math.sin(this.elapsed + b.phase) * dt * .008; }
+    this.bubbles = this.bubbles.filter(b => b.age < b.life).slice(-cap);
+    for (const r of this.ripples) r.age += dt;
     this.ripples = this.ripples.filter(r => r.age < 1.4);
+    for (const s of this.splashes) { s.age += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += .65 * dt; }
+    this.splashes = this.splashes.filter(s => s.age < .65).slice(-56);
   }
 
-  addRipple(x, y, radius) {
-    this.ripples.push({ x, y, radius, age: 0 });
-    this.ripples = this.ripples.slice(-8);
-  }
-
-  jumperPose() {
-    const progress = this.jump ? clamp(this.jump.age / JUMP_SECONDS, 0, 1) : 0;
-    const lift = this.jump ? Math.sin(progress * Math.PI) : 0;
-    return {
-      x: HOME.x + Math.sin(this.animationTime * 1.2) * .003 * this.activity,
-      y: HOME.y - lift * (this.jump?.height || 0) + Math.sin(this.animationTime * 1.5) * .006 * this.activity,
-      tilt: this.jump ? Math.sin(progress * TAU) * .12 : Math.sin(this.animationTime * .8) * .07 * this.activity,
-      stretch: 1 + lift * .04, lift
-    };
-  }
+  addRipple(x, y, radius) { this.ripples.push({ x, y, radius, age: 0 }); this.ripples = this.ripples.slice(-8); }
 
   render(ctx, { w, h }) {
-    if (this.assetError) throw Error('Small wonderful things artwork could not load');
+    if (this.assetError) throw Error('Small wonderful things character artwork could not load');
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     if (!this.background?.complete || !this.background.naturalWidth) {
-      const sky = ctx.createLinearGradient(0, 0, w, h);
-      sky.addColorStop(0, '#f6b1cf'); sky.addColorStop(1, '#8b82c6');
-      ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h); return;
+      ctx.fillStyle = '#bca1d3'; ctx.fillRect(0, 0, w, h); return;
     }
     if (this.artwork) this.artwork.render(ctx, w, h, this.animationTime, this.activity);
     else ctx.drawImage(this.background, 0, 0, w, h);
-    this.drawJumper(ctx, w, h);
-    for (const ripple of this.ripples) {
-      const progress = ripple.age / 1.4;
-      ctx.save(); ctx.globalAlpha = (1 - progress) * .5;
-      ctx.lineWidth = Math.max(1, w * .0007); ctx.strokeStyle = '#ffdfef';
-      ctx.beginPath(); ctx.ellipse(ripple.x * w, ripple.y * h, (.014 + progress * ripple.radius) * w, (.003 + progress * .008) * h, 0, 0, TAU); ctx.stroke(); ctx.restore();
+    for (const creature of this.creatures) {
+      this.drawCreature(ctx, creature, w, h);
+      if (creature.spec.id === 'green') {
+        // Restore the foreground rock over the green character: it can emerge
+        // from behind the rock without dragging the rock along with its body.
+        ctx.save(); ctx.beginPath();
+        const edge = [[.451,.697],[.459,.650],[.474,.590],[.483,.566],[.495,.523],[.514,.493],[.531,.503],[.553,.548],[.571,.596],[.592,.626],[.613,.697],[.613,.716],[.448,.716]];
+        edge.forEach(([x,y],i) => i ? ctx.lineTo(x*w,y*h) : ctx.moveTo(x*w,y*h));
+        ctx.closePath(); ctx.clip(); ctx.drawImage(this.background, 0, 0, w, h); ctx.restore();
+      }
     }
+    for (const r of this.ripples) {
+      const p = r.age / 1.4;
+      ctx.save(); ctx.globalAlpha = (1 - p) * .6; ctx.strokeStyle = '#ffe7f0'; ctx.lineWidth = Math.max(.7, w * .0007);
+      ctx.beginPath(); ctx.ellipse(r.x * w, r.y * h, (.012 + p * r.radius) * w, (.002 + p * .01) * h, 0, 0, TAU); ctx.stroke(); ctx.restore();
+    }
+    ctx.save(); ctx.fillStyle = '#e2e8ff';
+    for (const s of this.splashes) {
+      ctx.globalAlpha = (1 - s.age / .65) * .9;
+      ctx.beginPath(); ctx.ellipse(s.x * w, s.y * h, s.r * w, s.r * h * 2.3, -.4, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
     for (const bubble of this.bubbles) this.drawBubble(ctx, bubble, w, h);
   }
 
-  drawJumper(ctx, w, h) {
-    if (!this.jumper?.complete || !this.jumper.naturalWidth) return;
-    const pose = this.jumperPose(), sh = h * .17, sw = sh * this.jumper.naturalWidth / this.jumper.naturalHeight;
-    // The same creature rests partly submerged, then clears the surface to hop.
-    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, HOME.y * h); ctx.clip();
-    ctx.translate(pose.x * w, pose.y * h + h * .068 * (1 - pose.lift));
-    ctx.rotate(pose.tilt); ctx.scale(1, pose.stretch);
-    ctx.drawImage(this.jumper, -sw / 2, -sh, sw, sh); ctx.restore();
-    // A faint reflected silhouette anchors it to the water even at the apex.
-    ctx.save(); ctx.globalAlpha = .10 * (1 - pose.lift * .65);
-    ctx.translate(HOME.x * w, HOME.y * h); ctx.scale(1, -.28);
-    ctx.drawImage(this.jumper, -sw / 2, -sh, sw, sh); ctx.restore();
-    ctx.save(); ctx.strokeStyle = '#ffe8ee90'; ctx.lineWidth = w * .00065;
-    ctx.beginPath(); ctx.ellipse(HOME.x * w, HOME.y * h, w * (.023 + pose.lift * .01), h * .0045, 0, 0, TAU); ctx.stroke(); ctx.restore();
+  drawCreature(ctx, creature, w, h) {
+    const sprite = this.sprites?.[creature.spec.id]; if (!sprite) return;
+    const pose = creature.pose(), s = creature.spec, size = s.height * h;
+    const waterline = s.y * h;
+    // Keep the actual figure rigid. Animation comes from authored head, arm,
+    // eye and leg poses, plus travel across the bay and arcs through the air.
+    ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, 0);
+    for (let i = 32; i >= 0; i--) ctx.lineTo(i * w / 32, waterline + Math.sin(i * 2.8 + this.animationTime * 2) * h * .002);
+    ctx.closePath(); ctx.clip();
+    ctx.translate(pose.x * w, pose.y * h + size * .12 * (1 - pose.lift)); ctx.rotate(pose.angle);
+    sprite.draw(ctx, pose.frame, size, pose.direction); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(0, waterline, w, h - waterline); ctx.clip();
+    ctx.globalAlpha = .10 * (1 - pose.lift * .8);
+    ctx.translate(pose.x * w, waterline); ctx.scale(1, -.22);
+    sprite.draw(ctx, pose.frame, size, pose.direction); ctx.restore();
+    ctx.save(); ctx.strokeStyle = '#ffe6f0a0'; ctx.lineWidth = Math.max(.65, w * .0007);
+    ctx.beginPath(); ctx.ellipse(pose.x * w, waterline, size * .36, h * .005, 0, .1, Math.PI - .1); ctx.stroke();
+    if (creature.action && s.action === 'paddle') {
+      ctx.globalAlpha = .45; ctx.beginPath();
+      ctx.ellipse((pose.x - pose.direction * .035) * w, waterline + h * .005, size * .27, h * .008, 0, 0, TAU); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   drawBubble(ctx, bubble, w, h) {
@@ -143,11 +149,10 @@ export default class Monsters extends Scene {
     ctx.beginPath(); ctx.arc(x, y, r * .86, .3, 1.6); ctx.stroke(); ctx.restore();
   }
 
-  deactivate() { this.bubbles = []; this.ripples = []; this.jump = null; this.spawn = 0; this.motionHold = 0; this.activity = 0; this.animationTime = 0; }
+  deactivate() { this.creatures = []; this.bubbles = []; this.ripples = []; this.splashes = []; this.spawn = 0; this.motionHold = 0; this.activity = 0; this.animationTime = 0; }
   cleanup() {
-    this.deactivate(); this.disposed = true;
-    this.artwork?.cleanup(); this.artwork = null;
-    for (const image of [this.background, this.jumper]) if (image) { image.onload = null; image.onerror = null; image.removeAttribute('src'); }
-    this.background = this.jumper = null;
+    this.deactivate(); this.disposed = true; this.artwork?.cleanup(); this.artwork = null;
+    for (const image of [this.background, ...Object.values(this.images || {})]) if (image) { image.onload = null; image.onerror = null; image.removeAttribute('src'); }
+    this.background = null; this.images = {}; this.sprites = {};
   }
 }

@@ -19,6 +19,8 @@ function readJSON(name, fallback) { try { return JSON.parse(fs.readFileSync(path
 function writeJSON(name, data) { const file = path.join(runtime, name); fs.writeFileSync(file + '.tmp', JSON.stringify(data, null, 2), { mode: 0o600 }); fs.renameSync(file + '.tmp', file); }
 let key = process.env.FAL_KEY || ''; try { key ||= require('dotenv').parse(fs.readFileSync(keyPath)).FAL_KEY || ''; } catch {}
 let settings = sanitize(readJSON('settings.json', defaults));
+// Cloud streaming requires the operator to opt in again after each launch.
+settings.robotEnabled = false;
 if (process.argv.includes('--demo')) settings.demo = true;
 const scheduler = new Scheduler(settings, performance.now());
 scheduler.availability('robots', false, performance.now());

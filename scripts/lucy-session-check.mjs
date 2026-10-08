@@ -55,7 +55,8 @@ try {
   for (let i = 0; i < 100 && !operator; i++) { operator = app.windows().find(p => p.url().includes('operator.html')); if (!operator) await delay(100); }
   await operator.waitForFunction(() => document.querySelector('#camera-health').textContent === 'live', null, { timeout: 15000 });
   const initial = await status(); original = initial.settings; wasPaused = initial.paused;
-  assert(original.robotEnabled, 'Lucy must already be enabled');
+  console.log('Enable Lucy in the operator console within 60 seconds to authorize this paid check.');
+  await operator.waitForFunction(async () => (await window.installation.state()).settings.robotEnabled, null, { timeout: 60000 });
   if (!wasPaused) await operator.evaluate(() => window.installation.command('pause'));
   await operator.evaluate(() => window.installation.configure({ duration: 20 }));
   for (let round = 0; round < (repeat ? 2 : 1); round++) {

@@ -39,7 +39,7 @@ Alternatively paste the key into **Robot daydreams → FAL API key → Save**. F
 
 The operator console displays the exact path in use. An existing private settings key file takes priority over the repository file, including an explicitly cleared key. On Linux it is the application's Electron user-data directory, normally `~/.config/Reverie Installation/.env`. Key files are mode `0600`; the key stays in the main process, is not returned to the operator UI, and never reaches the projector. This is a private local file, **not encrypted OS keychain storage**. Saving an empty field removes the stored key. `FAL_KEY` in the launch environment can also supply credentials; restart to pick up manual file changes.
 
-Enable **Lucy 2.5 through FAL**, then use **Start live robot scene** or select Machine dreaming for an immediate connection within the spending limits. The current camera feed streams continuously to FAL/Decart during connection setup and the robot scene. Returned video continuously updates the audience canvas. All other scenes process locally. Lucy is disabled by default; rehearsal mode never uploads.
+Enable **Lucy 2.5 through FAL**, then use **Start live robot scene** or select Machine dreaming for an immediate connection within the spending limits. The current camera feed streams continuously to FAL/Decart during connection setup and the robot scene. Returned video continuously updates the audience canvas. All other scenes process locally. Lucy starts off on every app launch, even if it was enabled last time, and stays off until you enable it in the operator console. Rehearsal mode never uploads.
 
 ### Lucy integration and safeguards
 

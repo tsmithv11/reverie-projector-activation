@@ -16,7 +16,8 @@ try {
   await operator.waitForLoadState();
   await operator.waitForFunction(() => document.querySelector('#camera-health').textContent === 'live', null, { timeout: 15000 });
   original = (await operator.evaluate(() => window.installation.state())).settings;
-  assert(original.robotEnabled, 'Lucy must already be enabled by the operator');
+  console.log('Enable Lucy in the operator console within 60 seconds to authorize this paid check.');
+  await operator.waitForFunction(async () => (await window.installation.state()).settings.robotEnabled, null, { timeout: 60000 });
   let status = await operator.evaluate(() => window.installation.state());
   if (!status.cloud.canGenerate && status.cloud.blockReason.startsWith('Next request allowed')) {
     console.log('Waiting for the configured request interval; no provider request has been made.');

@@ -19,7 +19,7 @@ test('pause has a stable remaining time; manual selection and reorder are determ
   s.select('lines', 110000); assert.equal(s.left(110000), 60000); assert.equal(s.until('robots', 110000), 180000);
   s.configure(sanitize({ duration: 10 }), 110000); assert.equal(s.left(110000), 10000);
 });
-test('a one-scene playlist still reactivates on its next slot for fresh robot stills', () => {
+test('a one-scene playlist still reactivates on its next slot for a new activation', () => {
   const settings = sanitize({ duration: 10 }); settings.scenes = settings.scenes.map(s => ({ ...s, enabled: s.id === 'robots' }));
   const s = new Scheduler(settings, 0); s.tick(10001); assert.equal(s.active, 'robots'); assert.equal(s.activation, 1); assert.equal(s.left(10001), 10000);
 });

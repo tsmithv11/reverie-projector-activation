@@ -13,10 +13,10 @@ flowchart LR
   Latest --> Projector[Audience renderer / scene host]
   Main[Main process scheduler / watchdogs] --> Projector
   Console[Private operator window] --> Main
-  Latest --> Snapshot[Frozen snapshot / isolated cloud window]
-  Snapshot --> Lucy[Short FAL / Decart WebRTC session]
-  Lucy --> Cache[One in-memory result]
-  Cache --> Projector
+  Latest --> Live[Live frame pump / isolated cloud window]
+  Live --> Lucy[Bounded FAL / Decart WebRTC session]
+  Lucy --> Output[Latest decoded video frame]
+  Output --> Projector
 ```
 
 ## Failure boundaries and budgets
@@ -37,7 +37,7 @@ The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement
 | Pop bursts | 28, fading within 0.6 seconds |
 | Garden | 210 / 140 / 70 plants; maximum lifetime 42 seconds; 12 butterflies |
 | Transition | One old render snapshot, 1.4 seconds; no second active scene |
-| Cloud | One job; one current frozen input; one cached output; no queue |
+| Cloud | One live connection; one input and one output frame; one IPC in flight per direction; no queue |
 | Logs | 80 in-memory entries; approximately 2 MiB on disk |
 
 Automatic quality steps down after three one-second samples below 25 fps and steps up after twenty above 28 fps. Lowering quality reduces capture resolution, analysis rate and effect counts along with output resolution. The 30 fps metric counts rendered frames, not guaranteed camera acquisition fps or measured projector scanout. IPC and GC overhead remain platform dependent.
@@ -52,10 +52,21 @@ The engine aspect-contains the sensor in a 16:9 camera plane and applies optiona
 
 `initialize(context)` allocates resources; `activate(context)` starts the scene; `update(context)` advances simulation; `render(canvas2D, context)` draws; `deactivate()` ends activity; `cleanup()` releases resources. All methods must be synchronous, short and idempotent for cleanup. Each activation uses a fresh instance. `SceneHost` catches lifecycle/update/render exceptions, cleans up, quarantines the ID for the renderer lifetime and lets the scheduler continue. A hard infinite loop is recovered by restarting the audience process, not by catching an exception. No scene may own a camera, network session or accumulating request queue.
 
-Context: `{w,h,time,dt,quality,intensity,frame,analysis,robotImage,demo}`. `time` and `dt` are seconds; `dt` is clamped to 0.1; quality is 0/1/2. `frame` is a shared CanvasImageSource or null. `analysis` has `{boxes,motion}` with empty, safe defaults when unavailable. `robotImage` is the latest decoded cloud still, if any. Inputs are read-only by convention. Scene resources and simulations must tolerate changes in w/h and quality without allocating per-frame textures.
+Context: `{w,h,time,dt,quality,intensity,frame,analysis,robotVideo,demo}`. `time` and `dt` are seconds; `dt` is clamped to 0.1; quality is 0/1/2. `frame` is a shared CanvasImageSource or null. `analysis` has `{boxes,motion}` with empty, safe defaults when unavailable. `robotVideo` is the canvas containing the latest decoded Lucy video frame, if any. Inputs are read-only by convention. Scene resources and simulations must tolerate changes in w/h and quality without allocating per-frame textures.
 
 ## Security and data lifecycle
 
 Renderers have context isolation, sandboxing and no Node integration. Preloads expose role-specific IPC only; main-process handlers check sender identity. Only the engine can request camera permission, and audio is not requested. Local windows have a self-only network CSP; only the isolated robot window has FAL signaling network permissions. The root key stays in main; a short-lived model-scoped token is minted for each job. Windows cannot navigate to arbitrary content or open new windows. No telemetry or automatic updater is configured.
 
-Audience inputs/results remain in memory; only settings, budget timestamps and controlled status text persist. FAL/Decart retention and handling are outside the local application's control; enabling the robot feature sends the frozen image off-device. PNG test snapshots are generated only by explicit test scripts with synthetic media. The private `.env` is access-restricted but unencrypted. Native permission decisions remain under OS control.
+Audience inputs/results remain in memory; only settings, budget timestamps and controlled status text persist. FAL/Decart retention and handling are outside the local application's control; enabling the robot feature streams the live camera off-device while the scene connects and plays. PNG test snapshots are generated only by explicit test scripts with synthetic media. The private `.env` is access-restricted but unencrypted. Native permission decisions remain under OS control.
+
+## Robot availability
+
+The scheduler excludes robots until the first live video frame is decoded by the audience renderer and acknowledged to main. Planned order drives prewarming 15 seconds before the slot. Manual selection requests a connection and waits on the current scene until video arrives. Failed connections clear availability and the latest output; other enabled scenes continue. A robot-only unavailable playlist uses neutral ambient output (`active: null`). The operator gets the skip reason, error code, stage and spending-limit state.
+
+The hidden robot window pulls fresh shared-camera frames at up to 30 fps and paints a 1280×720 WebRTC input canvas. A `requestVideoFrameCallback` on Lucy's returned video publishes decoded 960×540 RGBA frames at up to 24 fps, with one acknowledged IPC in flight. Main retains only the latest frame and stamps its arrival time. Audience pulls it into a separate canvas and renders that current canvas every frame. Old-session IDs and non-increasing frame sequences are rejected. Camera and returned-video freshness expire after two seconds; no timer repaint can impersonate a newly decoded remote frame.
+
+Main enforces 25 seconds for connection setup. Once displayed, the stream is bounded by the configured scene duration even if the operator pauses or reselects the scene. Setup plus prewarming plus playback is bounded by duration plus 40 seconds. Scene exit, display/camera loss, settings cancellation and app quit first remove the scene, then send a stop message to the isolated service. The service closes the peer and signaling socket, waits 500 ms for close traffic and acknowledges local cleanup. Main retains the connection lock until that acknowledgement, or forces teardown after two seconds. This acknowledgement does not confirm that the provider released its concurrency quota. Audience recovery starts without a cached result. FAL credentials are scoped to `lucy-2-5` and expire after 120 seconds, longer than the maximum connection lifetime; no refresh/reconnect loop is used.
+
+
+Concurrency rejections before video arrives are classified as `SESSION_BUSY`. The attempt remains in session and rolling-hour caps, while its scene-interval reservation is rolled back to the prior attempt. A persisted 60-second wait and manual-retry requirement prevent automatic retries, including after restart. Retrying never bypasses prior-session intervals, scene enablement, camera freshness or spending caps.

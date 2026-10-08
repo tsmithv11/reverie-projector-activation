@@ -29,35 +29,37 @@ npm start
 
 ## FAL credentials — exact location
 
-**For source runs, put `FAL_KEY=your-key` in `.env` at this repository's root**, beside `package.json`. A blank `.env` is provided locally; `.env.example` documents the format. `.env`, `.env.*`, runtime state, logs, and build artifacts are excluded by `.gitignore`; only `.env.example` is committed. Never paste a real key into source files or a README.
+**Put `FAL_KEY=your-key` in `.env` at this repository's root**, beside `package.json`. Both source runs and the app built inside this repository's `release` folder can read it. A separately installed app uses its private settings file. A blank `.env` is provided locally; `.env.example` documents the format. `.env`, `.env.*`, runtime state, logs, and build artifacts are excluded by `.gitignore`; only `.env.example` is committed. Never paste a real key into source files or a README.
 
-Alternatively paste the key into **Robot daydreams → FAL API key → Save**. In the packaged Mac app it is stored at:
+Alternatively paste the key into **Robot daydreams → FAL API key → Save**. For a separately installed Mac app, it is stored at:
 
 ```text
-~/Library/Application Support/Reverie Installation/.env
+~/Library/Application Support/reverie-projector/.env
 ```
 
-The operator console displays the exact path in use. On Linux it is the application's Electron user-data directory, normally `~/.config/Reverie Installation/.env`. Key files are mode `0600`; the key stays in the main process, is not returned to the operator UI, and never reaches the projector. This is a private local file, **not encrypted OS keychain storage**. Saving an empty field removes the stored key. `FAL_KEY` in the launch environment can also supply credentials; restart to pick up manual file changes.
+The operator console displays the exact path in use. An existing private settings key file takes priority over the repository file, including an explicitly cleared key. On Linux it is the application's Electron user-data directory, normally `~/.config/Reverie Installation/.env`. Key files are mode `0600`; the key stays in the main process, is not returned to the operator UI, and never reaches the projector. This is a private local file, **not encrypted OS keychain storage**. Saving an empty field removes the stored key. `FAL_KEY` in the launch environment can also supply credentials; restart to pick up manual file changes.
 
-Enable **Lucy 2.5 through FAL** explicitly in settings. This sends a frozen audience frame to FAL/Decart as a short repeated-frame video stream. No subsequent live camera frames are attached. All other scenes are local. Generation is disabled by default, and rehearsal mode never uploads.
+Enable **Lucy 2.5 through FAL**, then use **Start live robot scene** or select Machine dreaming for an immediate connection within the spending limits. The current camera feed streams continuously to FAL/Decart during connection setup and the robot scene. Returned video continuously updates the audience canvas. All other scenes process locally. Lucy is disabled by default; rehearsal mode never uploads.
 
 ### Lucy integration and safeguards
 
-Verified October 7, 2026 against the [official endpoint](https://fal.ai/models/decart/lucy-2-5/realtime/api), [machine-readable schema](https://fal.ai/models/decart/lucy-2-5/realtime/llms.txt), and FAL's public WebRTC signaling implementation. The endpoint is **`decart/lucy-2-5/realtime`**. It is a **video editor**, not a still-image editing endpoint. We send a frozen canvas stream, capture a returned still, then close the peer and signaling connections. Supported edit inputs used: `prompt` and `enable_prompt_expansion: false`. `image_url` is unused in WebRTC; `reference_image_url` is optional and is not sent. We do not invent queue, image-size, seed, or inference-step parameters.
+The endpoint is **`decart/lucy-2-5/realtime`**, verified against the [official API](https://fal.ai/models/decart/lucy-2-5/realtime/api), [schema](https://fal.ai/models/decart/lucy-2-5/realtime/llms.txt), and public WebRTC client. FAL carries signaling; WebRTC carries live video to/from Decart. The prompt requests robots that follow people's movement while retaining the room and number of people. Inputs used are `prompt` and `enable_prompt_expansion: false`.
 
-- Preparation begins when the robot scene is within 45 seconds, including startup. The first appearance may use a local fallback while generation warms up. Pausing elsewhere does not generate.
-- One job, one frozen input, one retained result. No queued generation and **zero automatic paid retries**. A failure consumes its reserved budget slot.
-- 25-second outer watchdog; 24-second client watchdog; 10-second limit after the WebRTC offer; 7-second token request timeout. Disconnect closes the entire isolated generation window. No persistent or automatically reconnecting video session.
-- Default minimum interval: 10 minutes. Allowed: 5–60 minutes. Hard cap: 12 attempts in any rolling hour, persisted before connecting. Default session cap: 40 attempts, adjustable 1–100. Session cap resets on app restart; the rolling-hour history persists. These bound attempts and local connection time, not an exact dollar amount; FAL determines billing.
-- Missing credentials, offline service, timeouts, flat/black/invalid output: show the previous successful still or a locally drawn white-robot still. Fallback labels say **LOCAL ROBOT STUDY / STILL**. A returned cloud result is used on the next activation, never swapped into the middle of a static scene.
-- Technical image checks cannot verify whether every person became a robot or whether geometry was preserved. That still requires a real provider trial. No paid/live Lucy request was run in this delivery.
+- Automatic connection setup begins up to 15 seconds before the scheduled scene. Viewers continue seeing other scenes until live video is decoded. If setup misses its slot, the scene is skipped and the connection closes. Manual selection switches to robots when video arrives.
+- One connection, one current input frame and one current output frame, with backpressure and no accumulated frame queue. No saved photograph or local robot substitute.
+- A 25-second connection deadline, seven-second authentication deadline and two-second video-stall watchdog stop failed connections. Normal scene exit, camera loss, hidden/restarted audience display, disabling Lucy and quitting also close the stream. The app asks the isolated service to close its peer and signaling socket before destroying its window, with a two-second forced-cleanup deadline.
+- A live scene lasts at most the configured scene duration (10–60 seconds), even when rotation is paused. An outer bound includes setup and prewarming: duration plus 40 seconds, at most 100 seconds. This prevents an unattended paid connection.
+- Default minimum interval: 10 minutes; allowed 5–60. Hard cap: 12 attempts per rolling hour, persisted before connecting. Default app-session cap: 40, adjustable 1–100. Failed attempts consume a slot. No automatic paid retries. A pre-video concurrent-session rejection pauses automatic Lucy connections and offers **Retry live connection** after 60 seconds. Rejected attempts still count toward both caps, and any earlier real session’s interval still applies. FAL determines billing; these limits bound connections and time, not a quoted dollar cost.
+- Unavailable, failed or stalled Lucy video: **skip the robot scene for viewers** and show the reason, error code and connection phase in the operator console and local log. A robot-only unavailable playlist uses neutral ambient artwork.
+- Live service check on October 8: 84 returned frames during ten seconds of observation, changing audience output, and successful disconnect on scene exit. Audience rendering was 30 fps. The camera faced a ceiling; person-to-robot appearance still needs a person/crowd rehearsal.
+- Output screening rejects invalid dimensions and near-black/flat frames. Scene fidelity and model latency remain provider-dependent; it cannot verify the exact count or appearance of transformed people.
 
 ## What is real, simulated, and local?
 
 | Scene | Processing | Meaning and limits |
 |---|---|---|
 | Audience / field study | Local EfficientDet-Lite0 person detection; smoothed frame difference; animated heat gradients | Boxes and detector scores come from the model. Heat is labeled **SIMULATED HEAT / ARTISTIC FIELD**, never temperature. “Frame motion” is normalized image change, not physical speed or a crowd count. |
-| Machine dreaming | Frozen-frame Lucy stream through FAL; local vector robot fallback | Static image for the entire scene. Fallback is clearly labeled; it is not represented as a cloud-generated result. |
+| Machine dreaming | Live camera conversion through Lucy 2.5 / FAL | Returned robot video follows the current camera continuously. Unavailable results are skipped, with diagnostics only in the operator console. |
 | Small wonderful things | Local camera stylization, person-box monster overlays, vector creatures, bubbles driven by motion | Cartoon/vector interpretation of the reference, not photoreal generative video. Seven creatures chase and pop bounded bubbles. |
 | An outline of us | Local Sobel edges, camera silhouette layer, cyan person boxes and artistic perspective grid | No inferred depth, distance, velocity, emotion, or identity. |
 | A garden of possibility | Local motion-grid growth, occupancy from person detections, smoothed stillness | Plants fade after 24–42 seconds; butterflies gather after sustained low motion. Pink `#ffa0d0`, lavender `#E7D2F6`, blue `#4d65ff`, orange `#FF734A`, purple `#271431` were read from [Reverie](https://www.reveriesummit.com/); leaf green is a complementary addition. |
@@ -81,6 +83,7 @@ Settings save to the application user-data directory (`.runtime` for source runs
 
 ```sh
 npm test               # scheduler, motion, cloud gate, lifecycle and accelerated crowd stress
+npm run test:robots    # live frame handoff, connection limits, stalls and offline WebRTC roundtrip
 npm run test:smoke     # macOS desktop, mock webcam, workers, camera restart, offline cloud
 npm run test:soak      # 10-minute real-time synthetic crowd run
 SOAK_SECONDS=28800 npm run test:soak  # eight-hour venue rehearsal, if desired

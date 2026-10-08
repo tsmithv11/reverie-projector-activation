@@ -7,7 +7,7 @@ test('FAL auth uses SDK-verified REST URL, alias scope, expiration and JSON-stri
   let request;
   const token = await mintLucyToken('example-secret', async (url, options) => { request = { url, ...options }; return { ok: true, json: async () => 'temporary-token' }; });
   assert.equal(token, 'temporary-token'); assert.equal(request.url, 'https://rest.fal.ai/tokens/'); assert.equal(request.url, TOKEN_URL);
-  assert.deepEqual(JSON.parse(request.body), { allowed_apps: ['lucy-2-5'], token_expiration: 30 }); assert(request.signal instanceof AbortSignal);
+  assert.deepEqual(JSON.parse(request.body), { allowed_apps: ['lucy-2-5'], token_expiration: 120 }); assert(request.signal instanceof AbortSignal);
 });
 test('FAL auth accepts legacy wrapper, fails closed on malformed/error responses and never retries', async () => {
   assert.equal(await mintLucyToken('x', async () => ({ ok: true, json: async () => ({ detail: 'temporary-token' }) })), 'temporary-token');

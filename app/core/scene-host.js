@@ -4,6 +4,7 @@ export class SceneHost {
     if (id === this.id && !force) return;
     if (this.active) { try { this.active.deactivate(); } catch { this.report(this.id, 'deactivate'); } try { this.active.cleanup(); } catch { this.report(this.id, 'cleanup'); } }
     this.active = null; this.id = id;
+    if (!id) return;
     if (this.failed.has(id)) return;
     try { this.active = new this.registry[id](); this.active.initialize(context); this.active.activate(context); } catch { this.fail('activate'); }
   }

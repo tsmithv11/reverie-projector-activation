@@ -7,31 +7,39 @@ const { SCENES, defaults, sanitize } = require('./core/settings.cjs');
 const { Scheduler } = require('./core/scheduler.cjs');
 const { CloudGate } = require('./core/cloud-gate.cjs');
 const { mintLucyToken } = require('./core/fal-auth.cjs');
+const { resolveKeyPath } = require('./core/key-path.cjs');
+const { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure } = require('./core/robot-status.cjs');
 protocol.registerSchemesAsPrivileged([{ scheme: 'reverie', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 if (process.env.REVERIE_TEST_DIR) app.setPath('userData', process.env.REVERIE_TEST_DIR);
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 const runtime = process.env.REVERIE_TEST_DIR || (app.isPackaged ? app.getPath('userData') : path.join(__dirname, '../.runtime'));
 fs.mkdirSync(runtime, { recursive: true, mode: 0o700 });
-const keyPath = app.isPackaged || process.env.REVERIE_TEST_DIR ? path.join(runtime, '.env') : path.join(__dirname, '../.env');
+const keyPath = resolveKeyPath({ packaged: app.isPackaged, runtime, appPath: app.getAppPath(), testMode: !!process.env.REVERIE_TEST_DIR });
 function readJSON(name, fallback) { try { return JSON.parse(fs.readFileSync(path.join(runtime, name), 'utf8')); } catch { return fallback; } }
 function writeJSON(name, data) { const file = path.join(runtime, name); fs.writeFileSync(file + '.tmp', JSON.stringify(data, null, 2), { mode: 0o600 }); fs.renameSync(file + '.tmp', file); }
 let key = process.env.FAL_KEY || ''; try { key ||= require('dotenv').parse(fs.readFileSync(keyPath)).FAL_KEY || ''; } catch {}
 let settings = sanitize(readJSON('settings.json', defaults));
 if (process.argv.includes('--demo')) settings.demo = true;
 const scheduler = new Scheduler(settings, performance.now());
+scheduler.availability('robots', false, performance.now());
 const gate = new CloudGate(readJSON('cloud-budget.json', {}));
-let operator, audience, engine, robot, quitting = false, frame = null, preview = '', robotStill = null, robotJob = null, robotTimer, generation = 0;
+let operator, audience, engine, robot, quitting = false, frame = null, preview = '', robotOutput = null, robotJob = null, robotTimer, generation = 0;
+let robotClosing = null, quitAfterCleanup = false;
+let robotDecoded = false, robotStartedAt = 0, robotPresented = false, robotStopAt = 0, robotPhase = 'idle';
 let camera = { state: 'starting', message: 'Starting shared camera service', devices: [], detector: 'starting' };
-let rendering = { fps: 0, scene: scheduler.active, quality: 1 }, cloud = { state: settings.robotEnabled ? 'waiting' : 'disabled', message: 'Robot generation is optional' };
+let rendering = { fps: 0, scene: scheduler.active, quality: 1 }, cloud = { state: 'waiting', message: '' };
 let cameraHeartbeat = Date.now(), renderHeartbeat = Date.now(), restarting = new Set(), logTail = [];
+try { logTail = fs.readFileSync(path.join(runtime, 'installation.log'), 'utf8').trim().split('\n').slice(-12); } catch {}
 function log(code, detail = '') {
   // Only internal status codes and controlled text. Never log frames, tokens, SDP or provider error bodies.
   const line = `${new Date().toISOString()} ${code} ${String(detail).slice(0, 200)}`;
+  if (code === 'robot-skipped') console.warn(`[Lucy 2.5] ${detail}`);
   logTail.push(line); if (logTail.length > 80) logTail.shift();
   try { const p = path.join(runtime, 'installation.log'); if (fs.existsSync(p) && fs.statSync(p).size > 1024 * 1024) { fs.renameSync(p, p + '.1'); } fs.appendFileSync(p, line + '\n', { mode: 0o600 }); } catch {}
 }
 function displays() { return screen.getAllDisplays().map(d => ({ id: String(d.id), label: d.label || `Display ${d.id}`, width: d.size.width, height: d.size.height, primary: d.id === screen.getPrimaryDisplay().id })); }
-function state() { return { settings, scenes: SCENES, active: scheduler.active, activation: scheduler.activation, paused: scheduler.paused, remaining: scheduler.left(performance.now()), camera, rendering, cloud: { ...cloud, configured: !!key, count: gate.session, cap: settings.robotSessionCap, cachedAt: robotStill?.at || null }, displays: displays(), keyPath, logPath: path.join(runtime, 'installation.log'), logs: logTail.slice(-12), outputAvailable: !audience?.isDestroyed() && !!audience?.isVisible() }; }
+function cloudStatus() { return robotStatus({ settings, hasKey: !!key, gate, cloud, ready: !!robotOutput && robotDecoded && Date.now() - robotOutput.at < 2000, camera: camera.state, frameFresh: !!frame && Date.now() - frame.at < 2000, now: Date.now() }); }
+function state() { return { settings, scenes: SCENES, active: scheduler.active, activation: scheduler.activation, paused: scheduler.paused, remaining: scheduler.left(performance.now()), camera, rendering, cloud: { ...cloudStatus(), configured: !!key, count: gate.session, cap: settings.robotSessionCap, sessionId: robotJob?.id || null, streaming: gate.busy && !robotClosing, closing: !!robotClosing, frames: robotOutput?.seq || 0, secondsLeft: gate.busy ? Math.max(0, Math.ceil((robotStopAt - Date.now()) / 1000)) : 0 }, displays: displays(), keyPath, logPath: path.join(runtime, 'installation.log'), logs: logTail.slice(-12), outputAvailable: !audience?.isDestroyed() && !!audience?.isVisible() }; }
 function send(win, channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
 function broadcast() { const s = state(); for (const win of [operator, audience, engine]) send(win, 'state', s); }
 function allowed(event, win) { return win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame?.url.startsWith('reverie://app/'); }
@@ -48,18 +56,19 @@ function makeWindow(role, options = {}) {
 }
 function createOperator() { operator = makeWindow('operator', { minWidth: 1020, minHeight: 700, title: 'Reverie · Installation control' }); operator.once('ready-to-show', () => operator.show()); operator.on('close', e => { if (!quitting) { e.preventDefault(); operator.hide(); } }); }
 function placeOutput() {
-  if (!audience || audience.isDestroyed()) return;
+  if (quitting || !audience || audience.isDestroyed()) return;
   const all = screen.getAllDisplays(), primary = screen.getPrimaryDisplay();
   const display = all.find(d => String(d.id) === settings.displayId) || (!settings.displayId ? all.find(d => d.id !== primary.id) : null);
   audience.setFullScreen(false);
   if (display) { audience.setBounds(display.bounds); audience.showInactive(); audience.setFullScreen(settings.fullscreen); }
   else { audience.setBounds({ x: primary.workArea.x + 60, y: primary.workArea.y + 60, width: Math.min(1280, primary.workArea.width - 80), height: Math.min(720, primary.workArea.height - 80) }); audience.showInactive(); log('display-preview', 'External display absent; windowed preview on primary display'); }
 }
-function createAudience() { renderHeartbeat = Date.now(); audience = makeWindow('audience', { title: 'Reverie · Audience', frame: false }); audience.once('ready-to-show', placeOutput); audience.on('close', e => { if (!quitting) { e.preventDefault(); audience.hide(); operator?.show(); } }); }
+function createAudience() { renderHeartbeat = Date.now(); audience = makeWindow('audience', { title: 'Reverie · Audience', frame: false }); audience.once('ready-to-show', placeOutput); audience.on('close', e => { if (!quitting) { e.preventDefault(); stopRobot('DISPLAY_LOST'); audience.hide(); operator?.show(); } }); }
 function createEngine() { cameraHeartbeat = Date.now(); engine = makeWindow('engine', { width: 640, height: 360 }); }
 function restart(role) {
   if (quitting || restarting.has(role)) return;
-  if (role === 'robot') { finishRobot(null, 'Connection stopped; local robot scene available'); return; }
+  if (role === 'robot') { if (robotClosing) robotClosing.finish('forced'); else stopRobot('RENDERER_EXIT'); return; }
+  if (role === 'audience' || role === 'engine') stopRobot(role === 'engine' ? 'CAMERA_LOST' : 'DISPLAY_LOST');
   restarting.add(role);
   const win = { audience, engine, operator }[role];
   if (role === 'engine') { frame = null; preview = ''; camera.state = 'recovering'; camera.message = 'Restarting camera service'; }
@@ -80,23 +89,75 @@ function restart(role) {
     } else { ({ audience: createAudience, engine: createEngine, operator: createOperator })[role]?.(); restarting.delete(role); }
   }, 1500);
 }
-function finishRobot(result, message) {
+function stopRobot(code = 'CLIENT_ERROR', detail) {
+  if (robotClosing) return robotClosing.promise;
+  if (!gate.busy) return Promise.resolve();
   clearTimeout(robotTimer);
-  if (result && /^data:image\/jpeg;base64,/.test(result) && result.length < 6e6) { robotStill = { image: result, at: Date.now(), generation: ++generation }; cloud = { state: 'ready', message: 'Robot still ready in memory' }; log('robot-ready'); }
-  else { cloud = { state: 'fallback', message: message || 'Generation unavailable; cached or local robot still in use' }; log('robot-fallback'); }
-  gate.finish(); robotJob = null;
-  if (robot && !robot.isDestroyed()) robot.destroy(); robot = null;
-  broadcast();
+  code = classifyRobotFailure(code, detail);
+  if (code === 'SESSION_BUSY' && !robotOutput) {
+    gate.rejectConcurrency(Date.now());
+    try { writeJSON('cloud-budget.json', gate.snapshot()); }
+    catch { settings.robotEnabled = false; log('robot-budget', 'Could not persist retry state; Lucy disabled.'); }
+  }
+  const elapsed = Date.now() - robotStartedAt;
+  if (['SCENE_ENDED', 'CANCELLED', 'SESSION_LIMIT', 'APP_QUIT'].includes(code)) {
+    cloud = { state: 'waiting', message: code === 'SESSION_LIMIT' ? 'Live session ended at its time limit. Robot scene skipped until the next allowed session.' : 'Live connection closed. Waiting for the next robot scene.' };
+    log('robot-stopped', `${code} / ${elapsed}ms / ${robotOutput?.seq || 0} live frames`);
+  } else {
+    if (!FAILURES[code]) code = 'CLIENT_ERROR';
+    const diagnostic = safeDiagnostic(detail, key);
+    cloud = { state: 'error', code, phase: robotPhase, message: `${FAILURES[code]}${diagnostic && code !== 'SESSION_BUSY' ? ` Provider detail: ${diagnostic}` : ''} Robot scene skipped.`, elapsed };
+    log('robot-skipped', `${code} / ${robotPhase} / ${elapsed}ms / ${FAILURES[code]} Robot scene skipped.`);
+    if (diagnostic) log('robot-detail', diagnostic);
+  }
+  const win = robot, id = robotJob?.id;
+  robotOutput = null; robotDecoded = false; robotPresented = false; robotJob = null;
+  scheduler.availability('robots', false, performance.now());
+  // destroy() does not run beforeunload. Ask the service to close its WebRTC
+  // peer and signaling socket first, and hold the gate until cleanup finishes.
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  const closing = robotClosing = { win, id, promise, timer: null, finish: null };
+  closing.finish = mode => {
+    if (robotClosing !== closing) return;
+    clearTimeout(closing.timer);
+    if (win && !win.isDestroyed()) win.destroy();
+    robot = null; robotClosing = null; cloud.closing = false; gate.finish();
+    log('robot-disconnected', mode === 'graceful' ? 'Local peer and signaling close requested before window teardown; provider release is not acknowledged.' : 'Cleanup deadline reached; service forcibly closed. Provider release may be delayed.');
+    broadcast(); resolve();
+  };
+  cloud.closing = true; broadcast();
+  if (!win || win.isDestroyed() || win.webContents.isCrashed()) closing.finish('forced');
+  else { closing.timer = setTimeout(() => closing.finish('forced'), 2000); send(win, 'robot-stop', { id }); }
+  return promise;
 }
-function startRobot() {
-  if (!frame || Date.now() - frame.at > 2000 || camera.state !== 'live' || settings.demo || !settings.scenes.some(s => s.id === 'robots' && s.enabled)) return;
-  if (gate.reserve(Date.now(), settings, !!key)) return;
-  try { writeJSON('cloud-budget.json', { history: gate.history }); } catch { gate.finish(); cloud = { state: 'fallback', message: 'Cannot persist spending cap; cloud requests stopped' }; settings.robotEnabled = false; return; }
-  robotJob = { width: frame.width, height: frame.height, pixels: frame.pixels, mirror: settings.mirror };
-  cloud = { state: 'generating', message: 'Preparing one frozen audience frame · 25 second limit' };
-  log('robot-start');
+function syncRobot() {
+  if (!gate.busy || robotClosing) return;
+  const now = Date.now();
+  if (camera.state !== 'live' || !frame || now - frame.at > 2000) { stopRobot('CAMERA_LOST'); return; }
+  if (robotOutput && now - robotOutput.at > 2000) { stopRobot('VIDEO_STALLED'); return; }
+  if (robotDecoded && scheduler.active === 'robots' && !robotPresented) {
+    robotPresented = true; robotStopAt = now + settings.duration * 1000;
+    log('robot-live', `Displaying continuous Lucy video; ${settings.duration}s session limit`);
+  }
+  if (robotPresented && scheduler.active !== 'robots') stopRobot('SCENE_ENDED');
+  else if (now >= robotStopAt) stopRobot('SESSION_LIMIT');
+  else if (!robotPresented && !robotJob.manual && (scheduler.paused || scheduler.until('robots', performance.now(), true) > 15000)) stopRobot('CANCELLED');
+}
+function startRobot(manual = false, retry = false) {
+  if (quitting || !audience || audience.isDestroyed() || !audience.isVisible() || !(retry ? cloudStatus().canRetry : cloudStatus().canGenerate)) return;
+  if (gate.reserve(Date.now(), settings, !!key, retry)) return;
+  robotStartedAt = Date.now(); robotPhase = 'starting'; robotDecoded = false; robotPresented = false; robotOutput = null;
+  // A hard bound includes negotiation, prewarming and the displayed scene.
+  // Pausing rotation never leaves a paid stream running indefinitely.
+  robotStopAt = robotStartedAt + 40000 + settings.duration * 1000;
+  try { writeJSON('cloud-budget.json', gate.snapshot()); } catch { stopRobot('BUDGET_WRITE'); settings.robotEnabled = false; return; }
+  robotJob = { id: ++generation, manual };
+  cloud = { state: 'connecting', message: 'Connecting live camera to Lucy · 25 second connection limit', phase: robotPhase };
+  log('robot-start', 'Live camera conversion; viewers stay on the current scene until video arrives');
   robot = makeWindow('robot', { width: 640, height: 360 });
-  robotTimer = setTimeout(() => finishRobot(null, 'Generation timed out; cached or local robot still in use'), 25000);
+  robotTimer = setTimeout(() => stopRobot('TIMEOUT'), 25000);
+  broadcast();
 }
 app.whenReady().then(() => {
   const dist = path.resolve(__dirname, '../dist');
@@ -112,10 +173,12 @@ app.whenReady().then(() => {
     const old = settings; settings = sanitize({ ...settings, ...value });
     writeJSON('settings.json', settings); scheduler.configure(settings, performance.now());
     if (old.displayId !== settings.displayId || old.fullscreen !== settings.fullscreen) placeOutput();
-    if (gate.busy && (!settings.robotEnabled || settings.demo || !settings.scenes.some(s => s.id === 'robots' && s.enabled))) finishRobot(null, 'Cloud generation stopped by operator settings');
-    if (!settings.robotEnabled) cloud = { state: 'disabled', message: 'Local robot fallback active' };
-    else if (!key) cloud = { state: 'missing-key', message: 'Add your FAL key to enable Lucy' };
-    broadcast(); return state();
+    if (!settings.robotEnabled || settings.demo || !settings.scenes.some(s => s.id === 'robots' && s.enabled)) {
+      if (gate.busy) stopRobot('CANCELLED');
+      robotOutput = null; robotDecoded = false; scheduler.availability('robots', false, performance.now());
+      if (!cloud.code) cloud = { state: 'waiting', message: '' };
+    }
+    syncRobot(); broadcast(); return state();
   });
   handle('save-key', () => operator, value => {
     if (typeof value !== 'string' || value.length > 512 || /[\r\n"'\\]/.test(value)) throw Error('Invalid key');
@@ -123,8 +186,15 @@ app.whenReady().then(() => {
   });
   function command(name, value) {
     const now = performance.now();
-    if (name === 'select') scheduler.select(value, now);
-    if (name === 'next') scheduler.next(now);
+    if (name === 'select') {
+      if (value === 'robots' && !cloudStatus().ready) {
+        if (robotJob) robotJob.manual = true; else if (cloudStatus().canRetry) startRobot(true, true); else if (cloudStatus().canGenerate) startRobot(true); else log('robot-skipped', cloudStatus().message);
+      } else { if (value !== 'robots') stopRobot('CANCELLED'); scheduler.select(value, now); }
+    }
+    if (name === 'generate-robot') startRobot(true);
+    if (name === 'retry-robot') startRobot(true, true);
+    if (name === 'stop-robot') stopRobot('CANCELLED');
+    if (name === 'next') { scheduler.next(now); stopRobot('SCENE_ENDED'); }
     if (name === 'pause') scheduler.paused ? scheduler.resume(now) : scheduler.pause(now);
     if (name === 'output') { audience.show(); placeOutput(); }
     if (name === 'controls') operator.show();
@@ -132,13 +202,21 @@ app.whenReady().then(() => {
     if (name === 'reconnect') restart('engine');
     if (name === 'logs') shell.showItemInFolder(path.join(runtime, 'installation.log'));
     if (name === 'quit') { quitting = true; app.quit(); }
-    broadcast();
+    syncRobot(); broadcast();
   }
   handle('command', () => operator, command);
   handle('audience-command', () => audience, (name, value) => { if (['controls', 'fullscreen', 'pause', 'next', 'select'].includes(name)) command(name, value); });
   handle('frame', () => audience, seq => frame && frame.seq !== seq && Date.now() - frame.at < 2000 ? frame : null);
   handle('preview', () => operator, () => Date.now() - (frame?.at || 0) < 2000 ? preview : '');
-  handle('robot-image', () => audience, () => robotStill);
+  handle('robot-frame', () => audience, seq => robotOutput && robotOutput.seq !== seq && Date.now() - robotOutput.at < 2000 ? robotOutput : null);
+  handle('robot-decoded', () => audience, id => {
+    if (id !== robotJob?.id || !robotOutput || robotDecoded) return;
+    robotDecoded = true; clearTimeout(robotTimer); robotPhase = 'live';
+    cloud = { state: 'live', phase: 'live', message: 'Lucy is continuously transforming the live camera. The connection closes when this scene ends.' };
+    scheduler.availability('robots', true, performance.now());
+    if (robotJob.manual) scheduler.select('robots', performance.now());
+    syncRobot(); broadcast();
+  });
   handle('publish-frame', () => engine, data => {
     if (data && data.width <= 960 && data.height <= 720 && data.pixels?.length === data.width * data.height * 4) { frame = data; preview = data.preview || preview; cameraHeartbeat = Date.now(); }
     return true;
@@ -146,20 +224,38 @@ app.whenReady().then(() => {
   ipcMain.on('camera-status', (e, status) => { if (!allowed(e, engine)) return; cameraHeartbeat = Date.now(); if (camera.state !== status.state) log('camera-state', status.state); camera = status; });
   ipcMain.on('render-status', (e, status) => { if (!allowed(e, audience)) return; renderHeartbeat = Date.now(); if (status.failure && status.failure !== rendering.failure) log('scene-failure', status.failure); rendering = status; });
   handle('robot-job', () => robot, () => robotJob);
-  handle('robot-token', () => robot, async () => {
-    if (!gate.busy || !key) throw Error('Cloud request not authorized');
-    // Short-lived, fixed-endpoint credentials; no FAL secret crosses the preload bridge.
-    return mintLucyToken(key);
+  handle('robot-input', () => robot, seq => gate.busy && frame && !frame.demo && frame.seq !== seq && Date.now() - frame.at < 2000 ? frame : null);
+  handle('robot-publish', () => robot, data => {
+    if (!robotJob || data?.sessionId !== robotJob.id || !Number.isSafeInteger(data.seq) || data.seq <= (robotOutput?.seq || 0)) return false;
+    if (data.width !== 960 || data.height !== 540 || data.pixels?.length !== 960 * 540 * 4) { stopRobot('INVALID_IMAGE'); return false; }
+    robotOutput = { sessionId: data.sessionId, seq: data.seq, width: data.width, height: data.height, pixels: data.pixels, at: Date.now() };
+    return true;
   });
-  ipcMain.on('robot-result', (e, result) => { if (!allowed(e, robot)) return; finishRobot(result?.image, result?.ok ? undefined : 'Lucy result unavailable; cached or local robot still in use'); });
+  handle('robot-token', () => robot, async () => {
+    if (!gate.busy || robotClosing || !key) throw Error('Cloud request not authorized');
+    // Short-lived, fixed-endpoint credentials; no FAL secret crosses the preload bridge.
+    const id = robotJob?.id;
+    try { const token = await mintLucyToken(key); return id === robotJob?.id ? token : null; } catch (error) { if (id === robotJob?.id) stopRobot(error.code || 'AUTH_NETWORK'); return null; }
+  });
+  ipcMain.on('robot-closed', (e, id) => { if (robotClosing && allowed(e, robotClosing.win) && id === robotClosing.id) robotClosing.finish('graceful'); });
+  ipcMain.on('robot-stage', (e, phase) => { if (robotClosing || !allowed(e, robot) || !['authenticating', 'signaling', 'connecting-video', 'receiving-video'].includes(phase)) return; robotPhase = phase; cloud.phase = phase; cloud.message = `Lucy: ${phase.replaceAll('-', ' ')} · 25 second limit`; log('robot-stage', phase); broadcast(); });
+  ipcMain.on('robot-result', (e, result) => { if (!allowed(e, robot)) return; stopRobot(result?.code, result?.detail); });
   createOperator(); createAudience(); createEngine();
   screen.on('display-added', () => { placeOutput(); broadcast(); }); screen.on('display-removed', () => { placeOutput(); broadcast(); }); screen.on('display-metrics-changed', () => placeOutput());
   powerSaveBlocker.start('prevent-display-sleep');
-  setInterval(() => { scheduler.tick(performance.now()); if (scheduler.until('robots', performance.now()) <= 45000) startRobot(); broadcast(); }, 500);
+  setInterval(() => { scheduler.tick(performance.now()); syncRobot(); if (!scheduler.paused && scheduler.until('robots', performance.now(), true) <= 15000) startRobot(); broadcast(); }, 500);
   setInterval(() => { if (Date.now() - cameraHeartbeat > 12000) restart('engine'); if (audience?.isVisible() && Date.now() - renderHeartbeat > 10000) restart('audience'); }, 3000);
   log('installation-start');
 });
 app.on('activate', () => operator?.show());
 app.on('second-instance', () => { if (operator && !operator.isDestroyed()) { operator.show(); operator.focus(); } });
-app.on('before-quit', () => { quitting = true; clearTimeout(robotTimer); if (robot && !robot.isDestroyed()) robot.destroy(); log('installation-stop'); });
+app.on('before-quit', event => {
+  quitting = true;
+  if (!quitAfterCleanup && gate.busy) {
+    event.preventDefault();
+    stopRobot('APP_QUIT').then(() => { quitAfterCleanup = true; app.quit(); });
+    return;
+  }
+  clearTimeout(robotTimer); log('installation-stop');
+});
 app.on('window-all-closed', () => app.quit());

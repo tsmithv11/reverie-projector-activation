@@ -18,7 +18,9 @@ try {
   for (const id of ['heat','robots','monsters','lines','garden']) {
     await operator.evaluate(id => window.installation.command('select', id), id);
     await new Promise(r => setTimeout(r, 2500));
-    await audience.screenshot({ path: `test-results/scene-${id}.png` }); samples.push(await operator.evaluate(() => window.installation.state()));
+    const sample = await operator.evaluate(() => window.installation.state());
+    if (id === 'robots') { assert.notEqual(sample.active, 'robots'); assert.equal(sample.cloud.ready, false); }
+    await audience.screenshot({ path: `test-results/scene-${id}.png` }); samples.push(sample);
   }
   await operator.evaluate(() => window.installation.command('pause'));
   const a = await operator.evaluate(() => window.installation.state()); await new Promise(r => setTimeout(r, 1100)); const b = await operator.evaluate(() => window.installation.state()); assert.equal(a.remaining, b.remaining);
@@ -39,9 +41,9 @@ try {
   const reconnected = await operator.evaluate(() => window.installation.state()); assert.equal(reconnected.camera.state, 'live');
   // Isolate the test from the internet. A fake key must never cause a real paid call.
   await app.evaluate(() => { globalThis.fetch = () => Promise.reject(new Error('Simulated offline network')); });
-  await operator.evaluate(async () => { await window.installation.saveKey('test-key-not-real'); await window.installation.configure({ robotEnabled: true, robotMinutes: 5 }); await window.installation.command('select', 'robots'); });
+  await operator.evaluate(async () => { await window.installation.saveKey('test-key-not-real'); await window.installation.configure({ robotEnabled: true, robotMinutes: 5 }); await window.installation.command('select', 'robots'); await window.installation.command('generate-robot'); });
   await new Promise(r => setTimeout(r, 27000));
-  const offline = await operator.evaluate(() => window.installation.state()); assert.equal(offline.cloud.count, 1); assert.equal(offline.cloud.state, 'fallback'); assert(offline.rendering.fps > 20);
+  const offline = await operator.evaluate(() => window.installation.state()); assert.equal(offline.cloud.count, 1); assert.equal(offline.cloud.state, 'error'); assert.equal(offline.cloud.code, 'AUTH_NETWORK'); assert.notEqual(offline.active, 'robots'); assert.equal(offline.cloud.ready, false); assert(offline.rendering.fps > 20);
   await operator.evaluate(() => window.installation.command('select', 'garden')); await new Promise(r => setTimeout(r, 2000));
   // Main-process scene scheduling remains alive when the audience renderer exits.
   await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('audience.html')); w.webContents.forcefullyCrashRenderer(); });

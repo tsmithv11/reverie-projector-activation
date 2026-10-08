@@ -1,6 +1,6 @@
 # Validation report — October 7, 2026
 
-This is a runnable first build, not a completed venue acceptance test. All five local scenes, controls and recovery paths are implemented. Lucy's frozen-frame WebRTC adapter is implemented against verified FAL documentation, but a successful paid transformation has not been exercised.
+This is a runnable first build, not a completed venue acceptance test. Four local scenes, the generated robot scene, controls and recovery paths are implemented. The current Lucy adapter continuously streams camera and returned video. Earlier static-image checks below are historical and do not establish realtime behavior; see the latest verification section.
 
 ## Hardware and environment
 
@@ -47,7 +47,7 @@ Raw evidence: `test-results/soak.json`, `test-results/soak-before-pacing-fix.jso
 
 ## Limits and required venue acceptance
 
-- **Lucy output:** no real key supplied; no successful FAL/Decart generation or billing behavior validated. Verify at least one real transformation and failure case before relying on the cloud scene. The local robot still is a working fallback, not a claim of generated output.
+- **Lucy output:** one real transformation was returned and displayed on October 8 at 12:30 a.m. Pacific. Earlier calls failed. The sample added extra robots, and neither repeatability nor billed amount has been validated. Verify at least one real transformation and failure case before relying on the cloud scene. Unavailable robot results now skip the scene entirely; the local drawn fallback has been removed.
 - **Detection:** a lightweight 320×320-input COCO detector with at most 24 displayed boxes. It can miss small, dark, occluded or partial people and misclassify robot-like figures. There is no ground-truth crowd accuracy measurement. Group motion effects continue without detections; butterflies need occupied regions.
 - **Hardware:** no physical USB reconnect, camera permission-denial dialog, projector cable reconnect, actual projector, real dense crowd, older M-series MacBook, Intel MacBook or Linux hardware qualification. Those paths have code and selected simulated tests; they are not physically certified.
 - **Duration:** short real-time endurance runs plus accelerated logic tests do not prove multi-hour reliability. Run an eight-hour rehearsal on the venue hardware with the actual camera, projector, lighting and audience geometry.
@@ -56,3 +56,53 @@ Raw evidence: `test-results/soak.json`, `test-results/soak-before-pacing-fix.jso
 - **Supervision:** internal renderer/worker recovery does not restart a dead main process, crashed OS, disconnected power, or failed projector. An event deployment should arrange an external relaunch/supervision policy.
 
 Use [the event runbook](EVENT_RUNBOOK.md) for the physical acceptance pass. Do not enable a scene you have not checked on the actual installation.
+
+## Robot-scene correction — October 8, 2026
+
+The drawn robot fallback has been removed. Unavailable robot slots are skipped, including manual selection, while planned order still permits prewarming. A returned image must decode on the audience display before its slot becomes eligible. A failed request clears the prior result from rotation. An unavailable robot-only playlist uses neutral ambient output.
+
+- 18 unit/stress tests passed, including skip behavior, spending-limit diagnostics, and key lookup for locally packaged vs installed applications.
+- The desktop smoke test passed: other scenes stayed at 30 fps, offline authentication reported `AUTH_NETWORK / authenticating`, one attempt was reserved, the robot slot was skipped, and camera/display recovery passed.
+- `scripts/robot-check.mjs` passed with zero provider traffic: skip during generation, synthetic image handoff, static output, cached-image restoration after reload, and an unavailable robot-only playlist. This checks the image lifecycle, not provider image quality.
+- The app built inside this repository reads its root `.env` when no private settings key file exists. The source key is never included in the packaged app.
+
+- `scripts/robot-transport-check.mjs` passed with mocked authentication/signaling and local WebRTC peers: the CSP admits the actual SDK address, robot instructions are sent, outgoing frames remain frozen, and returned video becomes a decoded image. Zero provider requests in this test.
+
+Live trial: the supplied project key authenticated successfully. The first request exposed the wildcard-only CSP bug; after fixing it, a second bounded request reached Lucy and received `PROVIDER_ERROR` during `connecting-video` after 8.2 seconds. No generated image was shown. Live scenes continued, and original cloud settings were restored after testing. Provider summaries are now scrubbed for credentials/URLs and included with error codes and stages; recent controlled logs survive app restarts. A successful live robot transformation is still unverified.
+
+## Successful live Lucy verification — October 8, 12:30 a.m. Pacific
+
+The packaged application completed a real `decart/lucy-2-5/realtime` request using the supplied project key. No source changes were made between the preceding provider error and this successful attempt; the earlier error's precise cause remains unknown.
+
+- Request started: 07:30:49.812 UTC.
+- Authenticated / signaling: 07:30:50.130 UTC.
+- Connecting video: 07:30:50.934 UTC.
+- Receiving video: 07:30:51.142 UTC.
+- Validating returned image: 07:30:56.526 UTC.
+- Audience decoded image / ready: 07:30:56.556 UTC (6.744 seconds total).
+- Visually inspected the audience display after its crossfade: it showed a genuine generated photograph of white robots with cyan lights in the room, not the removed drawn overlay.
+- Rendering stayed at 30 fps. Lucy remains enabled with the existing 10-minute interval and 40-request session cap; automatic rotation remains enabled.
+- Image fidelity limitation: the model added robots beyond the single detected person. Exact person count, pose and background preservation are not guaranteed by this successful connection test. No audience image was saved to disk.
+
+
+## October 8 — continuous realtime conversion replaces the static adapter
+
+The frozen input, JPEG capture and static result cache have been removed. Both directions now carry changing frames for the lifetime of the scene. Current integration tests cover live-frame handoff, normal scene-exit shutdown, a paused scene's time limit, robot-only unavailable output, real SDK/WebRTC transport with changing synthetic input/output, and a decoded-video stall. These tests never contact the provider. The final unit suite passed 18/18; all three lifecycle scenarios (scene exit, paused time limit and connection timeout) passed. The SDK/WebRTC test confirmed changing input, changing audience output, and stalled-video skipping with no provider requests. The broader desktop smoke test passed all local scenes, camera recovery, offline authentication failure, audience recovery and role isolation.
+
+The rebuilt Mac application was checked against the real `decart/lucy-2-5/realtime` service at **2026-10-08 07:50:50–07:51:13 UTC** (12:50–12:51 a.m. Pacific). The existing ten-minute request interval was respected. One paid connection used the configured physical camera; no camera or generated images were saved. Connection setup took about 12.4 seconds. During ten seconds of observation after readiness, 84 returned frames reached the shared output and the audience canvas changed. The audience renderer measured 30 fps; the latest returned frame was 132 ms old at the sample. That freshness measures local frame arrival, not model end-to-end latency. Render fps is distinct from the slower provider video cadence. Selecting Next closed the connection and removed robot availability. The original 60-second duration and other settings were restored.
+
+The camera was pointed at a ceiling without people during this check. Continuous provider video is verified; transformation fidelity and movement correspondence with people need an in-view human/crowd rehearsal. The earlier static-photo success is not used as evidence for realtime movement.
+
+`REVERIE_LIVE_CHECK=1 node scripts/lucy-live-check.mjs` is an explicit paid opt-in check of the packaged application, excluded from normal tests. It respects configured enablement and persisted spending limits, temporarily caps the scene at 20 seconds, validates changing received output, stops the stream and restores settings. `test-results/lucy-live.json` contains numeric results only.
+
+The final application and ZIP were rebuilt and archive integrity checked; packaged credentials and runtime files were absent.
+
+## October 8 — concurrent-session rejection and disconnect cleanup
+
+The reported `Concurrent session limit reached.` occurred at 08:00:53 UTC before remote video arrived. The prior stop path destroyed the robot window, which bypasses Electron's `beforeunload` handler and therefore skipped the application's explicit peer/socket close calls. This is a confirmed local cleanup defect; it does not prove which server session or provider limit caused the rejection.
+
+Shutdown now removes the scene immediately, sends an explicit stop command, closes both transports, gives close traffic 500 ms to leave, and then acknowledges local cleanup. The connection gate stays locked until cleanup finishes; a two-second deadline handles a stuck renderer. App quit uses the same path. A transport test spies on both real browser close methods and observes socket closure before the window disappears. Exactly one initial prompt is sent.
+
+Pre-video concurrency rejection now reports `SESSION_BUSY`. The app keeps the failed attempt in both caps, persists a 60-second manual retry wait, and pauses automatic Lucy requests. Retrying retains any prior-session interval and all other eligibility checks. Tests cover classification, persistence, no automatic retry, session/hour caps, previous-session intervals, and the exact provider message in Electron.
+
+A fresh real-provider check at **13:44:37–13:44:50 UTC** succeeded in the rebuilt packaged app: 164 returned frames during ten seconds of observation, changing audience output, 30 fps audience rendering, and a latest-frame age of 58 ms. The log confirms explicit local cleanup ran before window teardown. One bounded paid connection was used; no imagery was saved. This confirms current service availability and client cleanup, not a server acknowledgement that a concurrency slot has been released or a guarantee against future provider limits.

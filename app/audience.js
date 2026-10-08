@@ -4,19 +4,28 @@ import { AdaptiveQuality } from './core/performance.js';
 import { camera } from './scenes/base.js';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
 const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
+const robotCanvas = document.createElement('canvas'), robotCtx = robotCanvas.getContext('2d');
 const previous = document.createElement('canvas'), previousCtx = previous.getContext('2d');
-let state = await api.state(), latest = null, pulling = false, robotImage = null, cachedAt = 0, seq = -1;
+let state = await api.state(), latest = null, pulling = false, robotLatest = null, robotPulling = false, robotSeq = -1, robotSession = null, seq = -1;
 let last = 0, deadline = 0, frames = 0, lastReport = performance.now(), fps = 0, crossfadeAt = -10000, failure = '', activation = -1;
 const adaptive = new AdaptiveQuality(), host = new SceneHost(registry, (id, phase) => { failure = `Scene ${id} failed during ${phase}; isolated fallback active`; });
-api.onState(async s => {
+function receiveState(s) {
   state = s;
-  if (s.cloud.cachedAt && s.cloud.cachedAt !== cachedAt) {
-    cachedAt = s.cloud.cachedAt;
-    const result = await api.robotImage(); if (!result) return;
-    const image = new Image(); image.src = result.image;
-    try { await image.decode(); robotImage = image; } catch { cachedAt = 0; }
-  }
-});
+  if (s.cloud.sessionId !== robotSession) { robotSession = s.cloud.sessionId; robotLatest = null; robotSeq = -1; }
+}
+api.onState(receiveState);
+receiveState(state);
+async function pullRobot() {
+  if (robotPulling || !robotSession) return; robotPulling = true;
+  try {
+    const f = await api.robotFrame(robotSeq);
+    if (!f || f.sessionId !== robotSession) return;
+    if (robotCanvas.width !== f.width || robotCanvas.height !== f.height) { robotCanvas.width = f.width; robotCanvas.height = f.height; }
+    robotCtx.putImageData(new ImageData(new Uint8ClampedArray(f.pixels), f.width, f.height), 0, 0);
+    const first = !robotLatest; robotLatest = f; robotSeq = f.seq;
+    if (first) await api.robotDecoded(f.sessionId);
+  } catch {} finally { robotPulling = false; }
+}
 async function pull() {
   if (pulling) return; pulling = true;
   try {
@@ -53,20 +62,22 @@ function tick(now) {
   deadline = (deadline || now) + 1000 / 30;
   if (deadline < now) deadline = now + 1000 / 30;
   const dt = Math.min(.1, (now - (last || now)) / 1000); last = now;
-  pull();
+  pull(); pullRobot();
   const quality = adaptive.level, w = [1280, 1600, 1920][quality], h = w * 9 / 16;
   if (canvas.width !== w) { canvas.width = w; canvas.height = h; previous.width = w; previous.height = h; crossfadeAt = -10000; }
   const live = latest && Date.now() - latest.at < 2000;
-  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotImage, demo: latest?.demo || false };
+  const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready;
+  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
   if (host.id !== state.active || activation !== state.activation) { previousCtx.drawImage(canvas, 0, 0); crossfadeAt = now; host.activate(state.active, context, activation !== state.activation); activation = state.activation; }
   ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
-  if (!live) ambient(w, h, context.time);
+  const visible = !!state.active && (state.active === 'robots' ? robotLive : live);
+  if (!visible) ambient(w, h, context.time);
   else if (!host.render(ctx, context)) { ambient(w, h, context.time); camera(ctx, source, w, h, .5); }
-  finishComposition(w, h, context.time, live);
+  finishComposition(w, h, context.time, visible);
   const transition = (now - crossfadeAt) / 1400;
   if (transition < 1) { const fade = Math.max(0, Math.min(1, transition)); ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade); ctx.drawImage(previous, 0, 0, w, h); ctx.globalAlpha = 1; }
   frames++;
-  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
+  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key.toLowerCase() === 'o') api.command('controls');

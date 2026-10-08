@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 
 const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
-const scenarios = ['missing-keys', 'decart-only', 'both-auth-fail', 'backup-cap', 'cancel-fallback', 'decart-timeout', 'decart-live'];
+const scenarios = ['missing-keys', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live'];
 for (const scenario of scenarios) {
   const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/providers-${scenario}-${Date.now()}`) } });
   const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 30000);
@@ -52,7 +52,7 @@ for (const scenario of scenarios) {
     await operator.evaluate(async ({ scenario, sceneId }) => {
       if (scenario !== 'missing-keys') await window.installation.saveKey('fake-decart-key', 'decart');
       if (!['missing-keys', 'decart-only'].includes(scenario)) await window.installation.saveKey('fake-fal-key', 'fal');
-      await window.installation.configure({ robotEnabled: true, robotSessionCap: scenario === 'backup-cap' ? 1 : 2, duration: 60 });
+      await window.installation.configure({ robotEnabled: true, duration: 60 });
       await window.installation.command('generate-robot', sceneId);
     }, { scenario, sceneId });
     if (scenario === 'cancel-fallback') {

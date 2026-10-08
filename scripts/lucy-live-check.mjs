@@ -1,5 +1,5 @@
 // Explicit opt-in only: this uses the configured physical camera and FAL account.
-// It respects the application's persisted spending gate and never saves imagery.
+// It respects the application's connection lock and never saves imagery.
 import { _electron as electron } from 'playwright';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';

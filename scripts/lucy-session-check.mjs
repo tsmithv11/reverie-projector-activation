@@ -62,13 +62,13 @@ try {
   for (let round = 0; round < (repeat ? 2 : 1); round++) {
     const deadline = Date.now() + 900000; let s = await status(), reported = 0;
     while (!s.cloud.canGenerate && !s.cloud.canRetry && Date.now() < deadline) {
-      assert(/Next request allowed|Manual retry available/.test(s.cloud.blockReason), s.cloud.blockReason);
+      assert(/Next scheduled connection is eligible/.test(s.cloud.blockReason), s.cloud.blockReason);
       if (Date.now() - reported > 45000) { console.log(s.cloud.blockReason); reported = Date.now(); }
       await delay(1000); s = await status();
     }
     assert(s.cloud.canGenerate || (s.cloud.canRetry && process.argv.includes('--retry')), s.cloud.blockReason);
     const traceStart = trace.length;
-    console.log(`Starting bounded live session ${round + 1}.`);
+    console.log(`Starting live session ${round + 1}.`);
     await operator.evaluate(() => window.installation.command('select', 'robots'));
     const readyDeadline = Date.now() + 28000;
     let first = await status();

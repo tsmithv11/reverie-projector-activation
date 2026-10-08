@@ -25,14 +25,19 @@ test('a one-scene playlist still reactivates on its next slot for a new activati
 });
 test('invalid settings cannot disable every scene or exceed operational limits', () => {
   const s = sanitize({ duration: 400, intensity: NaN, scenes: ['bad', { id: 'heat', enabled: false }, { id: 'heat', enabled: true }], robotMinutes: 0, robotSessionCap: 999 });
-  assert.equal(s.duration, 60); assert.equal(s.robotMinutes, 5); assert.equal(s.robotSessionCap, 100); assert(s.scenes.some(x => x.enabled)); assert.equal(new Set(s.scenes.map(x => x.id)).size, 6);
+  assert.equal(s.duration, 60); assert.equal(s.robotMinutes, undefined); assert.equal(s.robotSessionCap, undefined); assert(s.scenes.some(x => x.enabled)); assert.equal(new Set(s.scenes.map(x => x.id)).size, 6);
 });
-test('cloud gate bounds duplicate requests, failures, sessions and restart spending', () => {
-  const settings = sanitize({ robotEnabled: true, robotMinutes: 5, robotSessionCap: 2 }), g = new CloudGate(); const now = 1e9;
-  assert.equal(g.reserve(now, settings, false), 'missing-key'); assert.equal(g.reserve(now, settings, true), ''); assert.equal(g.reserve(now, settings, true), 'busy'); g.finish();
-  assert.equal(g.reserve(now + 100, settings, true), 'cooldown');
-  const restarted = new CloudGate({ history: g.history }); assert.equal(restarted.reserve(now + 100, settings, true), 'cooldown');
-  assert.equal(g.reserve(now + 300000, settings, true), ''); g.finish(); assert.equal(g.reserve(now + 600000, settings, true), 'session-cap');
+test('Lucy remains enabled through repeated successful connections, ignoring old saved limits', () => {
+  const settings = sanitize({ robotEnabled: true, robotMinutes: 60, robotSessionCap: 1 });
+  const now = 1e9, gate = new CloudGate({ history: Array(12).fill(now), cooldownAt: now, requiresManualRetry: true });
+  assert.equal(gate.reserve(now, settings, false), 'missing-key');
+  for (let i = 0; i < 120; i++) {
+    assert.equal(gate.reserve(now + i * 1000, settings, true), '');
+    assert.equal(gate.reserve(now + i * 1000, settings, true), 'busy');
+    gate.finish();
+  }
+  assert.equal(gate.session, 120); assert(settings.robotEnabled);
+  assert.equal(gate.reserve(now + 120000, sanitize({ ...settings, robotEnabled: false }), true), 'disabled');
 });
 function pixels(value) { const p = new Uint8ClampedArray(160 * 90 * 4); for (let i = 0; i < p.length; i += 4) { p[i] = p[i + 1] = p[i + 2] = value; p[i + 3] = 255; } return p; }
 test('motion rejects global illumination shifts and reacts to crowded local motion', () => {

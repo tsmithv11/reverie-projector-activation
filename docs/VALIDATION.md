@@ -192,3 +192,14 @@ The 51-test suite passes, including separate pose changes and travel for all six
 These are local frame animations with six authored poses per character, not generated video or fully articulated 3D rigs. Performance measurements use synthetic motion on this Mac; the physical installation still needs a walk-by rehearsal.
 
 The final Mac ARM64 app and ZIP were rebuilt. The packaged audience code and all seven new image assets match the tested build, and private configuration/test fixtures are excluded. Its isolated synthetic launch sampled 29.8 fps at High with no renderer errors. A final audience-view recording is saved as `test-results/wonderful-cartoon-preview.mp4`; it shows synthetic movement passing across the bay, reversing, then stopping. No camera imagery was recorded.
+
+
+## Lucy session enablement and paid-connection lifetime — October 8, 2026
+
+Lucy starts disabled on every launch. Once enabled, both scenes remain eligible for every rotation without successful-session cooldowns or attempt caps. Enablement is separate from connection lifetime: connections open only for a scheduled Lucy slot or explicit selection, with no background prewarming. Playback ends at its configured duration even when paused; reselecting or falling back cannot extend that deadline. Failed requests wait 60 seconds and then require a later slot or explicit selection, with no background retries while paused. Decart's 100-second server-side session backstop is retained.
+
+- All 66 unit and regression tests passed. The actual main-process lifecycle runs under a virtual clock, covering 25 minutes of repeated rotations past the former session cap, adjacent live-only scenes, off-by-default restart, scene switching and cancellation, bounded paused playback for both effects, one hour paused on a local scene with no Lucy connection, failure without paused retries, fallback within the original deadline, and shutdown.
+- Desktop checks confirmed no robot connection before its scheduled slot and cartoon disconnection at the duration limit while paused. The rebuilt Mac app also passed paused robot disconnection and four alternating scene selections, with no page errors. Packaged source and UI match the tested files, and the ZIP/checksum were refreshed.
+- Tests use synthetic media and mocked providers. No paid provider requests were made for this update.
+
+Earlier observations above describe prior builds. These checks verify app lifecycle and media handling, not the provider's invoice or long-running service availability. Each requested live appearance can still incur provider usage, including billable setup; a Lucy-only rotating playlist is not free idle time.

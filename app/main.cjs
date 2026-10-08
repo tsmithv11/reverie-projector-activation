@@ -13,7 +13,7 @@ const { PROVIDER_NAMES, configuredProviders, backupProvider } = require('./core/
 const { resolveKeyPath } = require('./core/key-path.cjs');
 const { outputLayout, OutputPlacement } = require('./core/output-placement.cjs');
 const { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure } = require('./core/robot-status.cjs');
-const { LIVE_SCENE_IDS, isLiveScene, liveSceneEnabled, nextLiveScene } = require('./core/live-scenes.cjs');
+const { LIVE_SCENE_IDS, isLiveScene, liveSceneEnabled, nextPlaylistScene } = require('./core/live-scenes.cjs');
 protocol.registerSchemesAsPrivileged([{ scheme: 'reverie', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 if (process.env.REVERIE_TEST_DIR) app.setPath('userData', process.env.REVERIE_TEST_DIR);
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
@@ -29,9 +29,10 @@ settings.robotEnabled = false;
 if (process.argv.includes('--demo')) settings.demo = true;
 const scheduler = new Scheduler(settings, performance.now());
 for (const id of LIVE_SCENE_IDS) scheduler.availability(id, false, performance.now());
-const gate = new CloudGate(readJSON('cloud-budget.json', {}));
+const gate = new CloudGate();
 let operator, audience, engine, robot, quitting = false, frame = null, preview = '', robotOutput = null, robotJob = null, robotTimer, generation = 0;
 let robotClosing = null, robotRun = null, quitAfterCleanup = false;
+let pendingLiveScene = null;
 const robotTokens = new WeakMap();
 let outputPlacement;
 let robotDecoded = false, robotStartedAt = 0, robotPresented = false, robotStopAt = 0, robotPhase = 'idle';
@@ -48,7 +49,7 @@ function log(code, detail = '') {
 }
 function displays() { return screen.getAllDisplays().map(d => ({ id: String(d.id), label: d.label || `Display ${d.id}`, width: d.size.width, height: d.size.height, primary: d.id === screen.getPrimaryDisplay().id })); }
 function cloudStatus() { return robotStatus({ settings, hasKey: configuredProviders(keys).length > 0, gate, cloud, ready: !!robotOutput && robotDecoded && Date.now() - robotOutput.at < 2000, camera: camera.state, frameFresh: !!frame && Date.now() - frame.at < 2000, now: Date.now() }); }
-function state() { return { settings, scenes: SCENES, active: scheduler.active, activation: scheduler.activation, paused: scheduler.paused, remaining: scheduler.left(performance.now()), camera, rendering, cloud: { ...cloudStatus(), configured: configuredProviders(keys).length > 0, providers: { decart: !!keys.decart, fal: !!keys.fal }, count: gate.session, cap: settings.robotSessionCap, sessionId: robotJob?.id || null, streaming: gate.busy && !robotClosing, closing: !!robotClosing, frames: robotOutput?.seq || 0, secondsLeft: gate.busy ? Math.max(0, Math.ceil((robotStopAt - Date.now()) / 1000)) : 0 }, displays: displays(), keyPath, logPath: path.join(runtime, 'installation.log'), logs: logTail.slice(-12), outputAvailable: !audience?.isDestroyed() && !!audience?.isVisible() }; }
+function state() { return { settings, scenes: SCENES, active: scheduler.active, activation: scheduler.activation, paused: scheduler.paused, remaining: scheduler.left(performance.now()), camera, rendering, cloud: { ...cloudStatus(), configured: configuredProviders(keys).length > 0, providers: { decart: !!keys.decart, fal: !!keys.fal }, count: gate.session, sessionId: robotJob?.id || null, streaming: gate.busy && !robotClosing, closing: !!robotClosing, frames: robotOutput?.seq || 0, secondsLeft: gate.busy ? Math.max(0, Math.ceil((robotStopAt - Date.now()) / 1000)) : 0 }, displays: displays(), keyPath, logPath: path.join(runtime, 'installation.log'), logs: logTail.slice(-12), outputAvailable: !audience?.isDestroyed() && !!audience?.isVisible() }; }
 function send(win, channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
 function broadcast() { const s = state(); for (const win of [operator, audience, engine]) send(win, 'state', s); }
 function allowed(event, win) { return win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame?.url.startsWith('reverie://app/'); }
@@ -97,27 +98,27 @@ function restart(role) {
   }, 1500);
 }
 function stopRobot(code = 'CLIENT_ERROR', detail) {
+  if (['APP_QUIT', 'CAMERA_LOST', 'DISPLAY_LOST'].includes(code)) { pendingLiveScene = null; }
   if (robotClosing) {
     // Operator cancellation during cleanup must also cancel a queued backup.
-    if (['CANCELLED', 'SCENE_ENDED', 'SESSION_LIMIT', 'APP_QUIT', 'CAMERA_LOST', 'DISPLAY_LOST', 'BUDGET_WRITE'].includes(code)) { robotRun = null; cloud.state = 'waiting'; cloud.message = 'Live connection stopped. Live scene skipped.'; }
+    if (['CANCELLED', 'SCENE_ENDED', 'SESSION_LIMIT', 'APP_QUIT', 'CAMERA_LOST', 'DISPLAY_LOST'].includes(code)) { robotRun = null; cloud.state = 'waiting'; cloud.message = 'Live connection stopped. Live scene skipped.'; }
     return robotClosing.promise;
   }
   if (!gate.busy) return Promise.resolve();
   clearTimeout(robotTimer);
   code = classifyRobotFailure(code, detail);
   const run = robotRun, nextProvider = backupProvider(run, code), provider = robotJob?.provider, sceneId = run?.sceneId || cloud.sceneId;
+  if (nextProvider && robotPresented) run.manual = true;
   if (!nextProvider) robotRun = null;
-  if (code === 'SESSION_BUSY' && !robotOutput) {
-    gate.rejectConcurrency(Date.now());
-    try { writeJSON('cloud-budget.json', gate.snapshot()); }
-    catch { settings.robotEnabled = false; log('robot-budget', 'Could not persist retry state; Lucy disabled.'); }
-  }
   const elapsed = Date.now() - robotStartedAt;
-  if (['SCENE_ENDED', 'CANCELLED', 'SESSION_LIMIT', 'APP_QUIT'].includes(code)) {
-    cloud = { state: 'waiting', sceneId, message: code === 'SESSION_LIMIT' ? 'Live session ended at its time limit. Live scene skipped until the next allowed session.' : 'Live connection closed. Waiting for the next live scene.' };
+  if (['SCENE_ENDED', 'SESSION_LIMIT', 'CANCELLED', 'APP_QUIT'].includes(code)) {
+    cloud = { state: 'waiting', sceneId, message: code === 'SESSION_LIMIT' ? 'Live connection closed at the scene time limit. Lucy remains enabled for the next rotation.' : 'Live connection closed. Lucy remains enabled for the next rotation.' };
     log('robot-stopped', `${code} / ${elapsed}ms / ${robotOutput?.seq || 0} live frames`);
   } else {
     if (!FAILURES[code]) code = 'CLIENT_ERROR';
+    if (!nextProvider) {
+      gate.failed(Date.now());
+    }
     const diagnostic = safeDiagnostic(safeDiagnostic(detail, keys.decart), keys.fal);
     const message = `${PROVIDER_NAMES[provider] || 'Lucy'}: ${FAILURES[code]}${diagnostic && code !== 'SESSION_BUSY' ? ` Provider detail: ${diagnostic}` : ''}`;
     cloud = { state: nextProvider ? 'connecting' : 'error', sceneId, provider, code, phase: robotPhase, message: `${message} ${nextProvider ? 'Closing Decart before trying the FAL backup.' : 'Live scene skipped.'}`, elapsed };
@@ -139,11 +140,13 @@ function stopRobot(code = 'CLIENT_ERROR', detail) {
     robot = null; robotClosing = null; cloud.closing = false; gate.finish();
     log('robot-disconnected', mode === 'not-opened' ? 'Local media released; no signaling socket was opened.' : mode === 'graceful' ? 'Peer closed; signaling close handshake completed before window teardown. Upstream quota release is not acknowledged.' : 'Signaling close was not acknowledged before the cleanup deadline. Provider release may be delayed.');
     if (nextProvider && robotRun === run) {
-      const eligible = !quitting && settings.robotEnabled && !settings.demo && liveSceneEnabled(settings, run.sceneId) && audience && !audience.isDestroyed() && audience.isVisible() && camera.state === 'live' && frame && Date.now() - frame.at < 2000;
+      const eligible = (!run.playbackStopAt || Date.now() < run.playbackStopAt) && !quitting && settings.robotEnabled && !settings.demo && liveSceneEnabled(settings, run.sceneId) && audience && !audience.isDestroyed() && audience.isVisible() && camera.state === 'live' && frame && Date.now() - frame.at < 2000;
       const blocked = eligible ? gate.reserveFallback(Date.now(), settings, !!keys[nextProvider]) : 'cancelled';
       if (!blocked) { run.index++; beginRobotAttempt(run); }
       else { robotRun = null; cloud.state = 'error'; cloud.message = `Decart failed. FAL backup unavailable (${blocked}). Live scene skipped.`; log('robot-skipped', `FAL backup / ${blocked}`); }
     }
+    const pending = pendingLiveScene; pendingLiveScene = null;
+    if (pending) startRobot(true, pending);
     broadcast(); resolve();
   };
   cloud.closing = true; broadcast();
@@ -157,27 +160,54 @@ function syncRobot() {
   if (camera.state !== 'live' || !frame || now - frame.at > 2000) { stopRobot('CAMERA_LOST'); return; }
   if (robotOutput && now - robotOutput.at > 2000) { stopRobot('VIDEO_STALLED'); return; }
   if (robotDecoded && scheduler.active === robotJob.sceneId && !robotPresented) {
-    robotPresented = true; robotStopAt = Math.min(robotStopAt, now + settings.duration * 1000);
-    log('robot-live', `Displaying continuous Lucy video; ${settings.duration}s session limit`);
+    robotPresented = true;
+    robotRun.playbackStopAt ||= now + settings.duration * 1000;
+    robotStopAt = Math.min(robotStopAt, robotRun.playbackStopAt);
+    log('robot-live', `Displaying Lucy video for at most ${settings.duration} seconds, including paused time.`);
   }
   if (robotPresented && scheduler.active !== robotJob.sceneId) stopRobot('SCENE_ENDED');
   else if (now >= robotStopAt) stopRobot('SESSION_LIMIT');
   else if (!robotPresented && !robotJob.manual && scheduler.paused) stopRobot('CANCELLED');
 }
-function startRobot(manual = false, retry = false, sceneId = 'robots') {
-  if (!liveSceneEnabled(settings, sceneId) || quitting || !audience || audience.isDestroyed() || !audience.isVisible() || !(retry ? cloudStatus().canRetry : cloudStatus().canGenerate)) return;
+function startRobot(manual = false, sceneId = 'robots') {
+  if (!liveSceneEnabled(settings, sceneId) || quitting || !audience || audience.isDestroyed() || !audience.isVisible() || !cloudStatus().canGenerate) return false;
   const providers = configuredProviders(keys);
-  if (gate.reserve(Date.now(), settings, providers.length > 0, retry)) return;
+  if (gate.reserve(Date.now(), settings, providers.length > 0)) return false;
   robotRun = { providers, index: 0, manual, sceneId };
   beginRobotAttempt(robotRun);
+  return true;
+}
+function selectScene(sceneId) {
+  pendingLiveScene = null;
+  if (!settings.scenes.some(scene => scene.id === sceneId && scene.enabled)) return false;
+  if (!isLiveScene(sceneId)) {
+    stopRobot('CANCELLED'); scheduler.select(sceneId, performance.now()); return true;
+  }
+  if (!settings.robotEnabled || settings.demo) return false;
+  if (robotRun?.sceneId === sceneId && !robotClosing) {
+    robotRun.manual = true; if (robotJob) robotJob.manual = true;
+    if (robotDecoded) scheduler.select(sceneId, performance.now());
+    return true;
+  }
+  if (gate.busy) {
+    stopRobot('CANCELLED');
+    // The old service must release its media and socket before switching effects.
+    if (robotClosing) pendingLiveScene = sceneId;
+    else return startRobot(true, sceneId);
+    return true;
+  }
+  return startRobot(true, sceneId);
+}
+function advanceScene() {
+  const next = nextPlaylistScene(scheduler, settings.robotEnabled && !settings.demo);
+  if (!next || !selectScene(next)) { scheduler.next(performance.now()); syncRobot(); }
 }
 function beginRobotAttempt(run) {
   const provider = run.providers[run.index];
   robotStartedAt = Date.now(); robotPhase = 'starting'; robotDecoded = false; robotPresented = false; robotOutput = null;
-  // A hard bound includes negotiation, prewarming and the displayed scene.
-  // Pausing rotation never leaves a paid stream running indefinitely.
-  robotStopAt = robotStartedAt + 40000 + settings.duration * 1000;
-  try { writeJSON('cloud-budget.json', gate.snapshot()); } catch { stopRobot('BUDGET_WRITE'); settings.robotEnabled = false; return; }
+  // Keep setup and playback bounded, including pause/reselection. A backup
+  // inherits any playback deadline already established by the first provider.
+  robotStopAt = Math.min(robotStartedAt + 25000 + settings.duration * 1000, run.playbackStopAt || Infinity);
   robotJob = { id: ++generation, manual: run.manual, provider, sceneId: run.sceneId };
   cloud = { state: 'connecting', provider, sceneId: run.sceneId, message: `Connecting ${SCENES.find(scene => scene.id === run.sceneId).name} to ${PROVIDER_NAMES[provider]} · 25 second connection limit`, phase: robotPhase };
   log('robot-start', `${run.sceneId} / ${PROVIDER_NAMES[provider]} live camera conversion; viewers stay on the current scene until video arrives`);
@@ -200,6 +230,7 @@ app.whenReady().then(() => {
     writeJSON('settings.json', settings); scheduler.configure(settings, performance.now());
     if (old.displayId !== settings.displayId || old.fullscreen !== settings.fullscreen) placeOutput();
     if (!settings.robotEnabled || settings.demo || (robotRun ? !liveSceneEnabled(settings, robotRun.sceneId) : !settings.scenes.some(s => isLiveScene(s.id) && s.enabled))) {
+      pendingLiveScene = null;
       if (gate.busy) stopRobot('CANCELLED');
       robotOutput = null; robotDecoded = false;
       for (const id of LIVE_SCENE_IDS) scheduler.availability(id, false, performance.now());
@@ -213,20 +244,12 @@ app.whenReady().then(() => {
   });
   function command(name, value) {
     const now = performance.now();
-    if (name === 'select') {
-      if (!settings.scenes.some(scene => scene.id === value && scene.enabled)) return;
-      if (isLiveScene(value) && !(cloudStatus().ready && robotJob?.sceneId === value)) {
-        if (robotRun?.sceneId === value) { robotRun.manual = true; if (robotJob) robotJob.manual = true; }
-        else if (gate.busy) log('robot-skipped', 'Another live scene is connecting or playing.');
-        else if (cloudStatus().canRetry) startRobot(true, true, value);
-        else if (cloudStatus().canGenerate) startRobot(true, false, value);
-        else log('robot-skipped', cloudStatus().message);
-      } else { if (!isLiveScene(value)) stopRobot('CANCELLED'); scheduler.select(value, now); }
+    if (name === 'select' || name === 'generate-robot' || name === 'retry-robot') selectScene(value || cloud.sceneId || 'robots');
+    if (name === 'stop-robot') {
+      settings.robotEnabled = false; pendingLiveScene = null;
+      writeJSON('settings.json', settings); stopRobot('CANCELLED');
     }
-    if (name === 'generate-robot') startRobot(true, false, value || 'robots');
-    if (name === 'retry-robot') startRobot(true, true, value || cloud.sceneId || 'robots');
-    if (name === 'stop-robot') stopRobot('CANCELLED');
-    if (name === 'next') { scheduler.next(now); stopRobot('SCENE_ENDED'); }
+    if (name === 'next') advanceScene();
     if (name === 'pause') scheduler.paused ? scheduler.resume(now) : scheduler.pause(now);
     if (name === 'output') placeOutput({ show: true });
     if (name === 'controls') operator.show();
@@ -242,7 +265,7 @@ app.whenReady().then(() => {
     if (!frame || frame.seq === seq || Date.now() - frame.at >= 2000) return null;
     if (analysisOnly !== true) return frame;
     // Artwork scenes need no camera pixels, edge image, energy grid or JPEG preview.
-    // Keep the shared full packet intact for camera scenes and robot prewarming.
+    // Keep the shared full packet intact for camera scenes and live scenes.
     const { points = [], calm = [], amount = 0 } = frame.motion || {};
     return { seq: frame.seq, at: frame.at, demo: frame.demo, boxes: frame.boxes, motion: { points, calm, amount } };
   });
@@ -294,9 +317,11 @@ app.whenReady().then(() => {
   });
   powerSaveBlocker.start('prevent-display-sleep');
   setInterval(() => {
-    const now = performance.now(); scheduler.tick(now); syncRobot();
-    const next = nextLiveScene(scheduler, now);
-    if (!scheduler.paused && next && scheduler.until(next, now, true) <= 15000) startRobot(false, false, next);
+    const now = performance.now();
+    // Enabling Lucy only makes its playlist slots eligible. Never prewarm or
+    // retry in the background while a local scene (or paused rotation) is idle.
+    if (!scheduler.paused && (scheduler.active === null || scheduler.left(now) <= 0) && !pendingLiveScene && !(robotRun?.manual && !robotPresented)) advanceScene();
+    syncRobot();
     broadcast();
   }, 500);
   setInterval(() => { if (Date.now() - cameraHeartbeat > 12000) restart('engine'); if (audience?.isVisible() && Date.now() - renderHeartbeat > 10000) restart('audience'); }, 3000);

@@ -23,7 +23,7 @@ function render(s) {
   state = s; sceneList(s);
   const ds = JSON.stringify([s.camera.devices, s.displays]);
   if (ds !== deviceSignature) { deviceSignature = ds; $('camera').replaceChildren(); option($('camera'), '', 'Default camera'); for (const d of s.camera.devices || []) option($('camera'), d.id, d.label); if (s.settings.cameraId && !(s.camera.devices || []).some(d => d.id === s.settings.cameraId)) option($('camera'), s.settings.cameraId, 'Selected camera · disconnected'); $('display').replaceChildren(); option($('display'), '', 'Auto · first external display'); for (const d of s.displays) option($('display'), d.id, `${d.label} · ${d.width} × ${d.height}${d.primary ? ' · primary' : ''}`); }
-  for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality'],['robot-minutes','robotMinutes'],['robot-cap','robotSessionCap']]) if (document.activeElement !== $(id)) $(id).value = s.settings[key];
+  for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality']]) if (document.activeElement !== $(id)) $(id).value = s.settings[key];
   for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).checked = s.settings[key];
   if (document.activeElement !== $('intensity')) $('intensity').value = Math.round(s.settings.intensity * 100);
   $('intensity-value').textContent = `${Math.round(s.settings.intensity * 100)}%`;
@@ -34,31 +34,31 @@ function render(s) {
   $('remaining').textContent = Math.ceil(s.remaining / 1000); $('progress').style.width = `${100 - s.remaining / (s.settings.duration * 10)}%`;
   $('pause').textContent = s.paused ? '▶  Resume rotation' : 'Ⅱ  Pause rotation'; $('rotation-label').textContent = s.paused ? 'Rotation paused' : 'Automatic rotation';
   $('fps').textContent = s.rendering.fps || '—'; $('camera-health').textContent = s.camera.state; $('detector-health').textContent = s.camera.detector === 'ready' ? `${s.camera.boxes} · ${s.camera.detectorMs} ms` : s.camera.detector;
-  $('quality-health').textContent = ['720p · reduced','900p · balanced','1080p · high'][s.rendering.quality || 0]; $('cloud-health').textContent = s.cloud.ready ? 'Live' : s.cloud.state === 'connecting' ? `Connecting · ${s.cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : `Skipped · ${s.cloud.state}`;
+  $('quality-health').textContent = ['720p · reduced','900p · balanced','1080p · high'][s.rendering.quality || 0]; $('cloud-health').textContent = s.cloud.ready ? 'Live' : s.cloud.state === 'connecting' ? `Connecting · ${s.cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : !s.settings.robotEnabled ? 'Off' : s.cloud.code ? 'Unavailable' : 'Enabled · idle';
   $('health-note').textContent = s.rendering.failure || s.camera.message; $('camera-pill').textContent = s.camera.state === 'demo' ? 'SYNTHETIC CROWD' : `CAMERA ${s.camera.state.toUpperCase()}`;
   $('decart-key-status').textContent = s.cloud.providers.decart ? 'Key configured' : 'Not configured';
   $('key-status').textContent = s.cloud.providers.fal ? 'Key configured' : 'Not configured'; $('key-path').textContent = `Stored privately: ${s.keyPath}`;
-  $('cloud-note').textContent = `${s.cloud.message}${s.cloud.code ? ` [${s.cloud.code} · ${s.cloud.phase || 'image check'}]` : ''} ${s.cloud.blockReason && s.cloud.blockReason !== s.cloud.message ? s.cloud.blockReason : ''} · ${s.cloud.count}/${s.cloud.cap} connection attempts this session. Maximum 12/hour. Decart first; one FAL backup attempt if needed.`;
+  $('cloud-note').textContent = `${s.cloud.message}${s.cloud.code ? ` [${s.cloud.code} · ${s.cloud.phase || 'image check'}]` : ''} ${s.cloud.blockReason && s.cloud.blockReason !== s.cloud.message ? s.cloud.blockReason : ''} · ${s.cloud.count} connection attempts this session. Enabled scenes reconnect only for their next slot or an explicit selection. Decart first; one FAL backup attempt if needed.`;
   if (s.cloud.streaming || s.cloud.closing) $('live-scene').value = s.cloud.sceneId;
   for (const option of $('live-scene').options) option.disabled = !s.settings.scenes.some(scene => scene.id === option.value && scene.enabled);
   if (!$('live-scene').selectedOptions[0] || $('live-scene').selectedOptions[0].disabled) $('live-scene').value = [...$('live-scene').options].find(option => !option.disabled)?.value || 'robots';
-  $('live-scene').disabled = s.cloud.streaming || s.cloud.closing;
+  $('live-scene').disabled = s.cloud.closing;
   $('generate-robot').disabled = !s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming && !(s.cloud.closing && s.cloud.state === 'connecting');
-  $('generate-robot').textContent = s.cloud.closing ? (s.cloud.state === 'connecting' ? 'Cancel FAL backup' : 'Closing connection…') : s.cloud.streaming ? `Stop live connection · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : `Start live ${$('live-scene').value === 'cartoon' ? 'cartoon' : 'robot'} scene`;
+  $('generate-robot').textContent = s.cloud.closing ? (s.cloud.state === 'connecting' ? 'Cancel FAL backup' : 'Closing connection…') : s.cloud.streaming ? `Turn off Lucy · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : `Start live ${$('live-scene').value === 'cartoon' ? 'cartoon' : 'robot'} scene`;
   document.querySelector('.privacy-pill').textContent = s.cloud.streaming ? '● Live camera → Lucy / Decart' : '● Local processing';
   $('robot-availability').textContent = s.cloud.display;
   for (const entry of s.settings.scenes.filter(scene => isLiveScene(scene.id))) {
     const card = document.querySelector(`.scene-card[data-id=${entry.id}]`);
     const current = s.cloud.sceneId === entry.id;
-    if (card) { card.querySelector('.scene-art').disabled = !entry.enabled || (!s.cloud.canGenerate && !s.cloud.canRetry && !(current && (s.cloud.ready || s.cloud.streaming))); card.querySelector('.scene-number').textContent = current && s.cloud.ready ? 'LIVE · LUCY 2.5' : current && s.cloud.streaming ? 'CONNECTING LIVE VIDEO' : 'LUCY 2.5 · LIVE VIDEO'; }
+    if (card) { card.querySelector('.scene-art').disabled = !entry.enabled || (!s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming); card.querySelector('.scene-number').textContent = current && s.cloud.ready ? 'LIVE · LUCY 2.5' : current && s.cloud.streaming ? 'CONNECTING LIVE VIDEO' : 'LUCY 2.5 · LIVE VIDEO'; }
   }
   $('log-lines').textContent = s.logs.join('\n');
   for (const card of document.querySelectorAll('.scene-card')) { card.classList.toggle('active', card.dataset.id === s.active); card.classList.toggle('disabled', !s.settings.scenes.find(x => x.id === card.dataset.id).enabled); }
 }
 api.onState(render); render(state);
 for (const [id, name] of [['generate-robot','generate-robot'],['output','output'],['pause','pause'],['next','next'],['fullscreen','fullscreen'],['reconnect','reconnect'],['logs','logs'],['quit','quit']]) $(id).onclick = () => api.command(name === 'generate-robot' ? (state.cloud.streaming || state.cloud.closing ? 'stop-robot' : state.cloud.canRetry ? 'retry-robot' : name) : name, name === 'generate-robot' ? $('live-scene').value : undefined);
-$('live-scene').onchange = () => render(state);
-for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality'],['robot-minutes','robotMinutes'],['robot-cap','robotSessionCap']]) $(id).onchange = () => configure({ [key]: $(id).value });
+$('live-scene').onchange = () => { if (state.cloud.streaming && $('live-scene').value !== state.cloud.sceneId) api.command('select', $('live-scene').value); else render(state); };
+for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality']]) $(id).onchange = () => configure({ [key]: $(id).value });
 for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).onchange = () => configure({ [key]: $(id).checked });
 $('intensity').oninput = () => { $('intensity-value').textContent = `${$('intensity').value}%`; }; $('intensity').onchange = () => configure({ intensity: Number($('intensity').value) / 100 });
 for (const [button, input, provider] of [['save-key', 'fal-key', 'fal'], ['save-decart-key', 'decart-key', 'decart']]) $(button).onclick = async () => { try { await api.saveKey($(input).value, provider); $(input).value = ''; $('notice').textContent = 'API key saved privately.'; } catch { $('notice').textContent = 'Could not save key. Check its format and the file permissions.'; } };

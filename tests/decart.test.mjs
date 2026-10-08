@@ -12,7 +12,7 @@ const { CloudGate } = require('../app/core/cloud-gate.cjs');
 const { sanitize } = require('../app/core/settings.cjs');
 const { configuredProviders, backupProvider } = require('../app/core/robot-providers.cjs');
 
-test('Decart auth scopes a temporary token and session duration, without exposing permanent credentials', async () => {
+test('Decart auth scopes a temporary token with a provider-side duration backstop, without exposing permanent credentials', async () => {
   let request;
   const token = await mintDecartToken('private-test-key', async (url, options) => { request = { url, ...options }; return { ok: true, json: async () => ({ apiKey: 'temporary-token' }) }; });
   assert.equal(token, 'temporary-token'); assert.equal(request.url, TOKEN_URL);
@@ -54,19 +54,17 @@ test('provider order uses configured keys only and never falls back on operator/
   assert.deepEqual(configuredProviders({}), []);
   const run = { providers: ['decart', 'fal'], index: 0 };
   for (const code of ['AUTH_REJECTED', 'TIMEOUT', 'VIDEO_STALLED', 'SESSION_BUSY']) assert.equal(backupProvider(run, code), 'fal');
-  for (const code of ['CANCELLED', 'SCENE_ENDED', 'SESSION_LIMIT', 'APP_QUIT', 'CAMERA_LOST', 'DISPLAY_LOST', 'BUDGET_WRITE']) assert.equal(backupProvider(run, code), null);
+  for (const code of ['CANCELLED', 'SCENE_ENDED', 'APP_QUIT', 'CAMERA_LOST', 'DISPLAY_LOST']) assert.equal(backupProvider(run, code), null);
   assert.equal(backupProvider({ ...run, index: 1 }, 'TIMEOUT'), null);
 });
 
-test('backup consumes its own persisted cap slot and cannot overlap or bypass caps', () => {
-  const settings = sanitize({ robotEnabled: true, robotSessionCap: 2 }), gate = new CloudGate(), now = 1e9;
+test('backup is counted and cannot overlap the primary or bypass disabling Lucy', () => {
+  const settings = sanitize({ robotEnabled: true }), gate = new CloudGate(), now = 1e9;
   assert.equal(gate.reserve(now, settings, true), '');
   assert.equal(gate.reserveFallback(now + 1000, settings, true), 'busy');
   gate.finish(); assert.equal(gate.reserveFallback(now + 2000, settings, true), '');
-  assert.equal(gate.session, 2); assert.equal(gate.snapshot().history.length, 2);
-  gate.finish(); assert.equal(gate.reserveFallback(now + 3000, settings, true), 'session-cap');
-  const restored = new CloudGate({ history: Array(12).fill(now) });
-  assert.equal(restored.reserveFallback(now + 4000, settings, true), 'hour-cap');
+  assert.equal(gate.session, 2);
+  gate.finish(); assert.equal(gate.reserveFallback(now + 3000, { ...settings, robotEnabled: false }, true), 'disabled');
   assert.equal(new CloudGate().reserveFallback(now, settings, false), 'missing-key');
 });
 

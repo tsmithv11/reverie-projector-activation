@@ -6,8 +6,13 @@ await mkdir('test-results', { recursive: true });
 const reports = [];
 const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
 const requested = process.argv.slice(2).find(arg => !arg.startsWith('--'));
-for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 'connect-timeout', 'provider-busy', 'auto-prewarm']) {
-  const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/robot-${scenario}-${Date.now()}`) } });
+for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 'connect-timeout', 'provider-busy', 'auto-slot']) {
+  const profile = path.resolve(`test-results/robot-${scenario}-${Date.now()}`);
+  await mkdir(profile, { recursive: true });
+  await writeFile(path.join(profile, 'settings.json'), JSON.stringify({ robotEnabled: true, robotMinutes: 60, robotSessionCap: 1 }));
+  await writeFile(path.join(profile, 'cloud-budget.json'), JSON.stringify({ history: Array(12).fill(Date.now()), cooldownAt: Date.now(), requiresManualRetry: true }));
+  const packaged = process.argv.includes('--packaged');
+  const app = await electron.launch({ ...(packaged ? { executablePath: path.resolve('release/mac-arm64/Reverie Installation.app/Contents/MacOS/Reverie Installation') } : {}), args: [...(packaged ? [] : ['.']), '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: profile } });
   const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 60000);
   const errors = [];
   app.on('window', page => page.on('pageerror', e => errors.push(e.message)));
@@ -22,26 +27,31 @@ for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 
     };
     const operator = await getWindow('operator');
     await operator.waitForFunction(() => document.querySelector('#camera-health').textContent === 'live');
+    assert.equal((await operator.evaluate(() => window.installation.state())).settings.robotEnabled, false);
     // Block provider traffic; feed synthetic live frames across the exact worker
     // boundary to exercise scheduling, frame replacement and connection cleanup.
     await app.evaluate(() => { globalThis.pendingRobotFetch = []; globalThis.fetch = () => new Promise(resolve => globalThis.pendingRobotFetch.push(resolve)); });
     await operator.evaluate(async ({ scenario, sceneId }) => {
       await window.installation.saveKey('fake-test-key');
       const state = await window.installation.state();
-      await window.installation.configure({ robotEnabled: true, duration: 10, quality: 'high', robotSessionCap: scenario === 'provider-busy' ? 2 : 1,
-        ...(scenario === 'auto-prewarm' ? { scenes: state.settings.scenes.map(scene => ({ ...scene, enabled: scene.id === 'heat' || scene.id === sceneId })) } : {}) });
-      if (scenario !== 'auto-prewarm') await window.installation.command('generate-robot', sceneId);
+      await window.installation.configure({ robotEnabled: true, duration: 10, quality: 'high',
+        ...(scenario === 'auto-slot' ? { scenes: state.settings.scenes.map(scene => ({ ...scene, enabled: scene.id === 'heat' || scene.id === sceneId })) } : {}) });
+      if (scenario !== 'auto-slot') await window.installation.command('generate-robot', sceneId);
     }, { scenario, sceneId });
+    if (scenario === 'auto-slot') {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      assert.equal((await operator.evaluate(() => window.installation.state())).cloud.count, 0, 'No background prewarming');
+    }
     const robot = await getWindow('robot');
     await new Promise(r => setTimeout(r, 1200));
     let state = await operator.evaluate(() => window.installation.state());
     assert.notEqual(state.active, sceneId); assert(!state.cloud.ready); assert.equal(state.cloud.count, 1);
     if (scenario === 'provider-busy') {
       await robot.evaluate(() => window.installation.complete({ code: 'PROVIDER_ERROR', detail: 'Concurrent session limit reached.' }));
-      await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.includes('Manual retry available in'), null, { timeout: 5000 });
+      await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.includes('Next scheduled connection is eligible in'), null, { timeout: 5000 });
       state = await operator.evaluate(() => window.installation.state());
       assert.notEqual(state.active, sceneId); assert(!state.cloud.ready); assert(!state.cloud.streaming);
-      assert.match(state.cloud.blockReason, /Manual retry available in (59|60) seconds/);
+      assert.match(state.cloud.blockReason, /Next scheduled connection is eligible in (59|60) seconds/);
       assert(!state.cloud.canGenerate); assert(!state.cloud.canRetry);
       for (let i = 0; i < 30 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100));
       assert(robot.isClosed());
@@ -59,7 +69,7 @@ for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 
       reports.push({ scenario, sceneId, pass: true, providerRequests: 0, errors });
       continue;
     }
-    await robot.evaluate(async () => {
+    const supplyVideo = page => page.evaluate(async () => {
       const job = await window.installation.job();
       const c = document.createElement('canvas'); c.width = 960; c.height = 540;
       const ctx = c.getContext('2d'); let seq = 0, busy = false;
@@ -71,8 +81,9 @@ for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 
         busy = false;
       }, 50);
     });
+    await supplyVideo(robot);
     await operator.waitForFunction(() => document.querySelector('#cloud-health').textContent === 'Live');
-    if (scenario === 'auto-prewarm') {
+    if (scenario === 'auto-slot') {
       for (let i = 0; i < 120; i++) {
         if ((await operator.evaluate(() => window.installation.state())).active === sceneId) break;
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -80,12 +91,30 @@ for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 
     }
     state = await operator.evaluate(() => window.installation.state());
     assert.equal(state.active, sceneId); assert(state.cloud.ready);
-    if (scenario === 'scene-exit' || scenario === 'auto-prewarm') {
-      // Selecting the other live effect must not relabel this stream or start
-      // another connection while the shared gate is busy.
-      await operator.evaluate(sceneId => window.installation.command('select', sceneId === 'cartoon' ? 'robots' : 'cartoon'), sceneId);
-      const stillLive = await operator.evaluate(() => window.installation.state());
-      assert.equal(stillLive.active, sceneId); assert.equal(stillLive.cloud.sceneId, sceneId); assert.equal(stillLive.cloud.count, 1);
+    if (scenario === 'repeat-switch') {
+      await operator.evaluate(() => window.installation.command('pause'));
+      let previous = robot;
+      for (const target of [sceneId === 'robots' ? 'cartoon' : 'robots', sceneId, sceneId === 'robots' ? 'cartoon' : 'robots']) {
+        await operator.locator(`.scene-card[data-id=${target}] .scene-art`).click();
+        for (let i = 0; i < 60 && !previous.isClosed(); i++) await new Promise(resolve => setTimeout(resolve, 100));
+        assert(previous.isClosed(), 'Previous stream must close before the next scene connects');
+        const next = await getWindow('robot'); await supplyVideo(next);
+        await operator.waitForFunction(() => document.querySelector('#cloud-health').textContent === 'Live');
+        state = await operator.evaluate(() => window.installation.state());
+        assert.equal(state.active, target); assert(state.settings.robotEnabled); assert(state.cloud.ready);
+        assert.match(await operator.locator('#generate-robot').textContent(), /^Turn off Lucy · \d+s left$/);
+        previous = next;
+      }
+      assert.equal(state.cloud.count, 4);
+      await operator.locator('#cloud-enabled').uncheck();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      state = await operator.evaluate(() => window.installation.state());
+      assert(!state.cloud.ready && !state.cloud.streaming && !state.settings.robotEnabled);
+      assert.equal(state.cloud.count, 4); assert.deepEqual(errors, []);
+      reports.push({ scenario, sceneId, packaged, pass: true, connections: 4, providerRequests: 0, errors });
+      continue;
+    }
+    if (scenario === 'scene-exit' || scenario === 'auto-slot') {
       await operator.evaluate(() => window.installation.command('next'));
       state = await operator.evaluate(() => window.installation.state());
       assert.notEqual(state.active, sceneId); assert(!state.cloud.ready); assert(!state.cloud.streaming); for (let i = 0; i < 30 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100)); assert(robot.isClosed());
@@ -94,10 +123,17 @@ for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 
       assert.equal(state.active, null); assert(!state.cloud.ready);
     } else {
       await operator.evaluate(() => window.installation.command('pause'));
-      await operator.waitForFunction(() => document.querySelector('#log-lines').textContent.includes('SESSION_LIMIT'), null, { timeout: 14000 });
+      const first = await operator.evaluate(() => window.installation.state());
+      await new Promise(resolve => setTimeout(resolve, 12000));
       state = await operator.evaluate(() => window.installation.state());
-      assert.notEqual(state.active, sceneId); assert(state.paused); assert(!state.cloud.ready); for (let i = 0; i < 30 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100)); assert(robot.isClosed());
-      assert(state.logs.some(line => line.includes('SESSION_LIMIT')));
+      assert.notEqual(state.active, sceneId); assert(state.paused); assert(!state.cloud.ready); assert(robot.isClosed());
+      assert(state.settings.robotEnabled); assert.equal(state.cloud.count, first.cloud.count);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      assert.equal((await operator.evaluate(() => window.installation.state())).cloud.count, first.cloud.count);
+      await operator.evaluate(() => window.installation.command('stop-robot'));
+      state = await operator.evaluate(() => window.installation.state());
+      assert(!state.settings.robotEnabled); assert(!state.cloud.ready);
+
     }
     assert.equal(state.cloud.count, 1); assert.deepEqual(errors, []);
     reports.push({ scenario, sceneId, pass: true, providerRequests: 0, errors });

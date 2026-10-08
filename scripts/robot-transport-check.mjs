@@ -108,17 +108,17 @@ try {
   await operator.evaluate(async ({ useDecart, sceneId }) => {
     await window.installation.saveKey('fake-key');
     if (useDecart) await window.installation.saveKey('fake-decart-key', 'decart');
-    await window.installation.configure({ robotEnabled: true, robotSessionCap: useDecart ? 3 : 2, duration: 30, quality: 'high' });
+    await window.installation.configure({ robotEnabled: true, duration: 30, quality: 'high' });
     await window.installation.command('select', sceneId);
   }, { useDecart, sceneId });
   if (process.argv.includes('--busy')) {
     await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.startsWith('FAL:') && document.querySelector('#cloud-note').textContent.includes('[SESSION_BUSY') && !document.querySelector('#generate-robot').textContent.includes('Closing'), null, { timeout: 5000 });
     const failed = await operator.evaluate(() => window.installation.state());
     assert.equal(failed.cloud.code, 'SESSION_BUSY'); assert(!failed.cloud.ready); assert(!failed.cloud.streaming); assert(!failed.cloud.canGenerate);
-    assert.match(failed.cloud.blockReason, /Manual retry available/); assert.notEqual(failed.active, sceneId);
+    assert.match(failed.cloud.blockReason, /Next scheduled connection/); assert.notEqual(failed.active, sceneId);
     assert.equal(sockets, 1); assert.equal(prompts, 1); assert(offers <= 1); assert.equal(failed.cloud.count, useDecart ? 2 : 1);
     assert.equal(decartSockets, useDecart ? 1 : 0); assert.equal(decartPrompts, useDecart ? 1 : 0);
-    console.log(JSON.stringify({ scenario: useDecart ? 'both-providers-busy' : 'wire-provider-busy', decartSockets, decartPrompts, preservedProviderError: true, skipped: true, automaticRequestsPaused: true, sockets, prompts, offers, providerRequests: 0 }));
+    console.log(JSON.stringify({ scenario: useDecart ? 'both-providers-busy' : 'wire-provider-busy', decartSockets, decartPrompts, preservedProviderError: true, skipped: true, eligibleNextSlotAfterBackoff: true, sockets, prompts, offers, providerRequests: 0 }));
   } else {
   await operator.waitForFunction(() => document.querySelector('#cloud-health').textContent === 'Live', null, { timeout: 30000 });
   const audience = await getWindow('audience'), robot = await getWindow('robot');

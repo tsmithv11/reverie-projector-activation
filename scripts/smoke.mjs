@@ -41,7 +41,7 @@ try {
   const reconnected = await operator.evaluate(() => window.installation.state()); assert.equal(reconnected.camera.state, 'live');
   // Isolate the test from the internet. A fake key must never cause a real paid call.
   await app.evaluate(() => { globalThis.fetch = () => Promise.reject(new Error('Simulated offline network')); });
-  await operator.evaluate(async () => { await window.installation.saveKey('test-key-not-real'); await window.installation.configure({ robotEnabled: true, robotMinutes: 5 }); await window.installation.command('select', 'robots'); await window.installation.command('generate-robot'); });
+  await operator.evaluate(async () => { await window.installation.saveKey('test-key-not-real'); await window.installation.configure({ robotEnabled: true }); await window.installation.command('select', 'robots'); await window.installation.command('generate-robot'); });
   await new Promise(r => setTimeout(r, 27000));
   const offline = await operator.evaluate(() => window.installation.state()); assert.equal(offline.cloud.count, 1); assert.equal(offline.cloud.state, 'error'); assert.equal(offline.cloud.code, 'AUTH_NETWORK'); assert.notEqual(offline.active, 'robots'); assert.equal(offline.cloud.ready, false); assert(offline.rendering.fps > 20);
   await operator.evaluate(() => window.installation.command('select', 'garden')); await new Promise(r => setTimeout(r, 2000));

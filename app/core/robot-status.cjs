@@ -22,7 +22,6 @@ const FAILURES = {
   TIMEOUT: 'Lucy exceeded the 25-second connection deadline.',
   RENDERER_EXIT: 'The isolated Lucy service stopped unexpectedly.',
   CANCELLED: 'Generation was cancelled by operator settings.',
-  BUDGET_WRITE: 'Could not save the spending limit. Check settings-folder permissions.',
   CLIENT_ERROR: 'The Lucy client could not complete this request.'
 };
 function safeDiagnostic(value, secret = '') {
@@ -51,14 +50,10 @@ function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh,
     demo: 'Rehearsal mode does not upload audience frames.',
     camera: 'A live camera frame is required.',
     busy: cloud.closing ? 'Closing the previous Lucy connection.' : 'Live camera streaming to Lucy.',
-    'provider-wait': `Manual retry available in ${Math.max(1, Math.ceil((gate.retryAt - now) / 1000))} seconds. No automatic retry.`,
-    'manual-retry': 'Manual retry available; provider capacity is unconfirmed. Automatic Lucy connections remain paused.',
-    cooldown: `Next request allowed in ${Math.max(1, Math.ceil((gate.cooldownAt + settings.robotMinutes * 60000 - now) / 1000))} seconds.`,
-    'session-cap': 'Live connection cap reached.',
-    'hour-cap': 'Rolling limit of 12 live connections per hour reached.'
+    'provider-wait': `Lucy remains enabled. Next scheduled connection is eligible in ${Math.max(1, Math.ceil((gate.retryAt - now) / 1000))} seconds.`
   };
   const blocked = ['disabled', 'missing-key', 'scene-disabled', 'demo'].includes(reason);
   const message = blocked ? `${reasons[reason]}${cloud.code ? ` Last failure: ${cloud.message}` : ''}` : cloud.message || reasons[reason] || 'Waiting for the next scheduled appearance.';
-  return { ...cloud, state: blocked ? reason : cloud.state, message, ready, canGenerate: !reason, canRetry: gate.requiresManualRetry && !gate.reason(now, settings, hasKey, true) && !['scene-disabled', 'demo', 'camera'].includes(reason) && camera === 'live' && frameFresh, blockReason: reasons[reason] || '', display: ready ? `Live · Lucy 2.5 / ${cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : cloud.state === 'connecting' ? 'Connecting · current scene continues' : 'Skipped · no live Lucy video' };
+  return { ...cloud, state: blocked ? reason : cloud.state, message, ready, canGenerate: !reason, canRetry: !!cloud.code && !reason, blockReason: reasons[reason] || '', display: ready ? `Live · Lucy 2.5 / ${cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : cloud.state === 'connecting' ? 'Connecting · current scene continues' : 'Skipped · no live Lucy video' };
 }
 module.exports = { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure };

@@ -11,7 +11,7 @@ const { CloudGate } = require('../app/core/cloud-gate.cjs');
 const { robotStatus, safeDiagnostic } = require('../app/core/robot-status.cjs');
 const { resolveKeyPath } = require('../app/core/key-path.cjs');
 
-test('unavailable robots are skipped by rotation and manual selection, but retain their prewarm slot', () => {
+test('unavailable robots are skipped by rotation and manual selection, but retain their planned playlist slot', () => {
   const scheduler = new Scheduler(sanitize({ duration: 10 }), 0);
   scheduler.availability('robots', false, 0);
   assert.equal(scheduler.until('robots', 0, true), 10000);
@@ -33,16 +33,16 @@ test('an unavailable robot-only playlist waits safely and recovers when live vid
   scheduler.availability('robots', true, 60002); assert.equal(scheduler.active, 'robots');
 });
 
-test('operator gets actionable missing-key, disabled, failure and spending-limit status', () => {
+test('operator gets actionable missing-key, disabled, failure and recovery status', () => {
   const settings = sanitize({ robotEnabled: true });
   const input = { settings, hasKey: false, gate: new CloudGate(), cloud: {}, ready: false, camera: 'live', frameFresh: true, now: 1e9 };
   assert.equal(robotStatus(input).state, 'missing-key');
   assert.match(robotStatus(input).message, /No Decart or FAL key/); assert.equal(robotStatus(input).canGenerate, false);
   assert.equal(robotStatus({ ...input, settings: sanitize() }).state, 'disabled');
   input.hasKey = true; assert(robotStatus(input).canGenerate);
-  input.gate.reserve(input.now, settings, true); input.gate.finish();
+  input.gate.reserve(input.now, settings, true); input.gate.failed(input.now); input.gate.finish();
   input.cloud = { state: 'error', code: 'AUTH_REJECTED', message: 'FAL rejected the API key.' };
-  const failed = robotStatus(input); assert.equal(failed.code, 'AUTH_REJECTED'); assert.match(failed.blockReason, /Next request allowed/); assert.equal(failed.canGenerate, false); assert.match(failed.display, /Skipped/);
+  const failed = robotStatus(input); assert.equal(failed.code, 'AUTH_REJECTED'); assert.match(failed.blockReason, /Next scheduled connection/); assert.equal(failed.canGenerate, false); assert.match(failed.display, /Skipped/);
 });
 
 test('local packaged build finds project key without packaging it; installed and test profiles stay isolated', () => {
@@ -77,31 +77,17 @@ test('concurrency rejection is classified separately from other provider failure
   assert.equal(classifyRobotFailure('PROVIDER_ERROR', 'Invalid prompt'), 'PROVIDER_ERROR');
 });
 
-test('refused sessions allow a manual retry after one minute without automatic retries or resetting caps', () => {
-  const settings = sanitize({ robotEnabled: true, robotSessionCap: 3 }), gate = new CloudGate(), now = 1e9;
+test('failed requests back off for one minute then automatically become eligible', () => {
+  const settings = sanitize({ robotEnabled: true }), gate = new CloudGate(), now = 1e9;
   assert.equal(gate.reserve(now, settings, true), '');
-  gate.rejectConcurrency(now + 2000);
-  assert.equal(gate.reason(now + 62000, settings, true, true), 'busy', 'Cleanup must retain the connection lock');
+  gate.failed(now + 2000);
+  assert.equal(gate.reason(now + 62000, settings, true), 'busy', 'Cleanup retains the connection lock');
   gate.finish();
-  assert.equal(gate.reason(now + 3000, settings, true, true), 'provider-wait');
-  assert.equal(gate.reason(now + 62000, settings, true), 'manual-retry');
-  assert.equal(gate.reason(now + 62000, settings, true, true), '');
-  assert.equal(gate.session, 1); assert.deepEqual(gate.history, [now]);
-  const restored = new CloudGate(gate.snapshot());
-  assert.equal(restored.reason(now + 63000, settings, true), 'manual-retry');
-  assert.equal(restored.reason(now + 63000, settings, true, true), '');
-  assert.equal(gate.reserve(now + 63000, settings, true, true), '');
-  assert.equal(gate.session, 2); assert.equal(gate.history.length, 2); assert(!gate.requiresManualRetry);
-  gate.finish(); assert.equal(gate.reason(now + 64000, settings, true, true), 'cooldown');
-});
-
-test('manual concurrency retry cannot override hourly, session, or prior-session interval limits', () => {
-  const settings = sanitize({ robotEnabled: true, robotSessionCap: 1, robotMinutes: 5 }), now = 1e9;
-  const gate = new CloudGate({ history: [now - 300000] });
-  gate.reserve(now, settings, true); gate.rejectConcurrency(now); gate.finish();
-  assert.equal(gate.reason(now + 60000, settings, true, true), 'session-cap');
-  const roomy = { ...settings, robotSessionCap: 40, robotMinutes: 10 };
-  assert.equal(gate.reason(now + 60000, roomy, true, true), 'cooldown', 'Raising interval still protects an earlier session');
-  gate.history = Array.from({ length: 12 }, (_, i) => now - i * 1000);
-  assert.equal(gate.reason(now + 60000, roomy, true, true), 'hour-cap');
+  assert.equal(gate.reason(now + 3000, settings, true), 'provider-wait');
+  assert.equal(gate.reason(now + 62000, settings, true), '');
+  assert.equal(gate.reserve(now + 63000, settings, true), '');
+  assert.equal(gate.session, 2);
+  gate.finish(); assert.equal(gate.reason(now + 64000, settings, true), '');
+  settings.robotEnabled = false;
+  assert.equal(gate.reason(now + 64000, settings, true), 'disabled');
 });

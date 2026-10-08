@@ -2,7 +2,7 @@ import { encode, decode } from '@msgpack/msgpack';
 
 // The FAL Lucy wire protocol, with a single-use socket and observable shutdown.
 // The generic SDK's close() returns before its socket closes and cannot cancel
-// a CONNECTING socket. Never reconnect or replay an input behind the spending gate.
+// a CONNECTING socket. Never reconnect or replay an input outside the main-process connection lock.
 export function openLucySignaling({ token, input, onResult, onError, onDiagnostic = () => {}, Socket = WebSocket, closeTimeoutMs = 4000 }) {
   const url = new URL('wss://fal.run/decart/lucy-2-5/realtime');
   url.searchParams.set('fal_jwt_token', token);

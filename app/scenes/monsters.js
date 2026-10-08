@@ -20,6 +20,7 @@ export default class Monsters extends Scene {
   activate() {
     this.bubbles = []; this.ripples = []; this.spawn = 0; this.motionHold = 0;
     this.jump = null; this.cooldown = 0; this.elapsed = 0;
+    this.activity = 0; this.animationTime = 0;
   }
 
   update({ dt, analysis, intensity = .7, quality = 2 }) {
@@ -30,6 +31,13 @@ export default class Monsters extends Scene {
     const moving = points.length > 0;
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.motionHold = moving ? this.motionHold + dt : 0;
+    // One shared envelope wakes every creature and the bay, even when motion
+    // is confined to one part of the camera. Ease out instead of snapping still.
+    const strength = points.reduce((sum, p) => sum + clamp(p.strength ?? 1, 0, 1), 0) / Math.max(1, points.length);
+    const target = this.motionHold >= .12 ? intensity * (.35 + .65 * clamp(strength * 2, 0, 1)) : 0;
+    this.activity += (target - this.activity) * (1 - Math.exp(-dt * (target > this.activity ? 4 : 1.5)));
+    if (target === 0 && this.activity < .001) this.activity = 0;
+    this.animationTime += dt * this.activity;
 
     if (this.jump) {
       this.jump.age += dt;
@@ -77,8 +85,9 @@ export default class Monsters extends Scene {
     const progress = this.jump ? clamp(this.jump.age / JUMP_SECONDS, 0, 1) : 0;
     const lift = this.jump ? Math.sin(progress * Math.PI) : 0;
     return {
-      x: HOME.x, y: HOME.y - lift * (this.jump?.height || 0) + Math.sin(this.elapsed * 1.5) * .0013,
-      tilt: this.jump ? Math.sin(progress * TAU) * .12 : Math.sin(this.elapsed * .8) * .018,
+      x: HOME.x + Math.sin(this.animationTime * 1.2) * .003 * this.activity,
+      y: HOME.y - lift * (this.jump?.height || 0) + Math.sin(this.animationTime * 1.5) * .006 * this.activity,
+      tilt: this.jump ? Math.sin(progress * TAU) * .12 : Math.sin(this.animationTime * .8) * .07 * this.activity,
       stretch: 1 + lift * .04, lift
     };
   }
@@ -91,7 +100,7 @@ export default class Monsters extends Scene {
       sky.addColorStop(0, '#f6b1cf'); sky.addColorStop(1, '#8b82c6');
       ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h); return;
     }
-    if (this.artwork) this.artwork.render(ctx, w, h, this.elapsed);
+    if (this.artwork) this.artwork.render(ctx, w, h, this.animationTime, this.activity);
     else ctx.drawImage(this.background, 0, 0, w, h);
     this.drawJumper(ctx, w, h);
     for (const ripple of this.ripples) {
@@ -134,7 +143,7 @@ export default class Monsters extends Scene {
     ctx.beginPath(); ctx.arc(x, y, r * .86, .3, 1.6); ctx.stroke(); ctx.restore();
   }
 
-  deactivate() { this.bubbles = []; this.ripples = []; this.jump = null; this.spawn = 0; this.motionHold = 0; }
+  deactivate() { this.bubbles = []; this.ripples = []; this.jump = null; this.spawn = 0; this.motionHold = 0; this.activity = 0; this.animationTime = 0; }
   cleanup() {
     this.deactivate(); this.disposed = true;
     this.artwork?.cleanup(); this.artwork = null;

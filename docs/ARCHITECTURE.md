@@ -32,14 +32,14 @@ The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement
 | Camera plane | 960×540 / 640×360 / 480×270 |
 | Local motion/edge plane | 384×216 / 256×144 / 160×90 |
 | Output canvas | 1920×1080 / 1600×900 / 1280×720; CSS contains it on the display |
-| Garden artwork canvas | 960×540 / 800×450 / 640×360; upscaled once inside the full-resolution portal; released on scene exit |
+| Bay and garden artwork canvas | 960×540 / 800×450 / 640×360; upscaled once inside the full-resolution portal; released when leaving artwork scenes |
 | Detection | 24 boxes; COCO person only, score ≥0.34 |
 | Motion | 24×14 grid; 48 strongest motion points; 24 occupied still points |
-| Monsters | 7 chasers + up to 12 audience overlays |
-| Bubbles | 110 / 80 / 45; maximum lifetime 8 seconds |
-| Pop bursts | 28, fading within 0.6 seconds |
+| Small wonderful things | Five painted creatures and water in one motion-driven GPU pass; one separate hopping sprite; 120 ms motion gate and smooth settling |
+| Bubbles | 90 / 64 / 36; maximum lifetime 7 seconds |
+| Bay ripples | 8, fading within 1.4 seconds |
 | Garden | 112 / 80 / 48 plants; maximum lifetime 46 seconds; 12 butterflies; cached botanical artwork and foliage |
-| Transition | One old render snapshot, 1.4 seconds; no second active scene. Garden entry uses an opaque midnight wash instead of the preceding camera scene. |
+| Transition | One old render snapshot, 1.4 seconds; no second active scene. Artwork entry uses an opaque scene-colored wash instead of the preceding camera scene. |
 | Cloud | One live connection; one input and one output frame; one IPC in flight per direction; no queue |
 | Logs | 80 in-memory entries; approximately 2 MiB on disk |
 
@@ -48,6 +48,8 @@ Automatic quality steps down after three one-second samples below 25 fps and ste
 ## Coordinate contract
 
 The engine aspect-contains the sensor in a 16:9 camera plane and applies optional mirroring **before** motion and detection. All scenes receive this same plane. Normalized x/y are top-left origin, range approximately 0–1; box extents can reach an edge for partially visible people. Drawing maps them through `x*w, y*h` with no scene-specific crop. There is no identity, demographic or physical-depth field.
+
+Artwork scenes request a compact packet containing only `{seq, at, demo, boxes, motion: {points, calm, amount}}`. Camera pixels, edge maps, energy grids and previews stay out of the audience renderer for these scenes. In-flight packets in the wrong format are discarded across camera/artwork transitions; the shared full packet remains available for camera scenes and robot prewarming.
 
 `FramePacket`: `{seq, at, width, height, pixels, boxes, motion, demo}`. `seq` is per-engine monotonic; `at` is a wall-clock timestamp for age checks. `pixels` is RGBA `Uint8ClampedArray`. `boxes` are `{x,y,w,h,score}`; score is detector confidence, not a calibrated probability. Spatial smoothing matches nearby boxes for one inference update only and discards unmatched old boxes; it does not establish identities. `motion` includes `{points,calm,amount,energy,edges,width,height,cols,rows,at}`. Points contain `{x,y,strength}`. `amount` is normalized smoothed grayscale change after a noise floor and global illumination correction, not percentage of people moving. Grid occupancy is tested against the current person boxes. Stillness needs >2.5 seconds of low local change, accumulates to ten seconds, and decays slowly through brief movement; unoccupied regions decay faster.
 

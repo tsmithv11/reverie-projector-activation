@@ -163,3 +163,20 @@ Validation:
 The garden artwork now renders at 960×540 / 800×450 / 640×360 for High / Balanced / Low, then scales once inside the existing full-resolution frame. This reduces artwork pixel count by 75%; the other scenes, border, branding, flower limits and animation timing keep their previous settings. The garden's audience frame requests carry only motion/stillness metadata, so no camera-image upload is performed in that renderer. Camera sensing and the shared full-frame slot remain available for other scenes and robot prewarming.
 
 All 49 unit tests and the extended `test:garden` rehearsal passed. Measured 30 fps with 112 flowers at 960×540 artwork / 1920×1080 output, and 30 fps at 640×360 artwork on Low. The real IPC contract check returned 2,044 characters of metadata instead of the sampled packet's 921,600 camera-pixel bytes (before counting the full packet's other data). No image, edge map, energy grid or preview was included in the compact response. The test observed zero camera uploads and zero camera draws during the garden, including re-entry and failure. Switching to the heat scene restored 1920×1080 scene rendering and full image packets. This is reduced work per frame, not a claim of higher FPS beyond the installation's existing 30 fps cap. The upscaled garden was visually inspected inside the pink portal.
+
+## Small wonderful things motion and performance — October 8, 2026
+
+All six creatures now respond to the camera: a shared envelope opens after 120 ms of sustained motion and drives independent bobbing, swaying and flexing in the five painted creatures, plus the separate sprite's bob and existing hop/landing cycle. Motion strength and operator intensity scale the response. Waves and moving highlights cover the exposed bay while the bridge stays anchored. Stillness smoothly returns the artwork to rest; the shader pass is skipped once settled. Camera loss stops new interaction and allows existing effects to finish.
+
+The scene now shares the garden's 960×540 / 800×450 / 640×360 artwork canvas inside the full-resolution portal. This reduces artwork pixels by 75%. Its audience packets contain motion metadata only, and scene entry clears the old camera snapshot. The shared camera feed remains unchanged for sensing, camera scenes and robot prewarming.
+
+- All 51 unit/stress tests passed, including motion strength, noise rejection, zero intensity, gradual settling and eight simulated hours of bounded scene updates.
+- `npm run test:wonderful` passed: High, Balanced and Low each sampled at 30 fps, with 30 fps after camera loss. Switching back to heat restored 1920×1080 scene rendering.
+- Rendered pixel comparisons confirmed animation in each of the five painted creatures and the water, zero difference in the bridge region, and an unchanged idle image. The hop apex and landing/cooldown behavior also passed.
+- Observed zero camera uploads and zero camera draws during artwork entry and re-entry. Different camera colors produced identical standalone scene output. A sampled compact packet was 1,720 characters versus 921,600 bytes of camera pixels alone in the full packet.
+- The shared-path `npm run test:garden` regression passed: 30 fps with 112 flowers, 29.8 fps on Low, and zero camera draws/uploads through re-entry and an intentional scene failure.
+- Reviewed the portal and fully active scene screenshots. GPU loss retains the static painted bay and the separate sprite/bubbles as before. Results are in `test-results/wonderful-check.json` and `test-results/wonderful-*.png`.
+
+The Mac ARM64 application was rebuilt using the locally installed Electron runtime. Its bundled audience code, main process and bay assets match the verified build; private configuration and test fixtures are excluded. An isolated packaged-app launch rendered the scene at 30 fps with 960×540 artwork, active particles and no renderer errors (`test-results/wonderful-packaged.json`).
+
+These measurements use synthetic camera motion on this Mac. They verify reduced rendering/transfer work within the existing 30 fps cap, not physical projector or crowded-venue performance.

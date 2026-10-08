@@ -6,14 +6,15 @@ const api = window.installation, canvas = document.querySelector('canvas'), ctx 
 const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
 const robotCanvas = document.createElement('canvas'), robotCtx = robotCanvas.getContext('2d');
 const previous = document.createElement('canvas'), previousCtx = previous.getContext('2d');
-const gardenCanvas = document.createElement('canvas'), gardenCtx = gardenCanvas.getContext('2d', { alpha: false });
-gardenCanvas.width = gardenCanvas.height = 1;
+const artworkCanvas = document.createElement('canvas'), artworkCtx = artworkCanvas.getContext('2d', { alpha: false });
+artworkCanvas.width = artworkCanvas.height = 1;
 let state = await api.state(), latest = null, pulling = false, robotLatest = null, robotPulling = false, robotSeq = -1, robotSession = null, seq = -1;
 let last = 0, deadline = 0, frames = 0, lastReport = performance.now(), fps = 0, crossfadeAt = -10000, failure = '', activation = -1;
+const isArtworkScene = id => id === 'monsters' || id === 'garden';
 const adaptive = new AdaptiveQuality(), host = new SceneHost(registry, (id, phase) => { failure = `Scene ${id} failed during ${phase}; isolated fallback active`; });
 function receiveState(s) {
   // Refetch even the current packet when changing between analysis and video.
-  if ((state.active === 'garden') !== (s.active === 'garden')) { seq = -1; latest = null; }
+  if (isArtworkScene(state.active) !== isArtworkScene(s.active)) { seq = -1; latest = null; }
   state = s;
   if (s.cloud.sessionId !== robotSession) { robotSession = s.cloud.sessionId; robotLatest = null; robotSeq = -1; }
 }
@@ -32,11 +33,11 @@ async function pullRobot() {
 }
 async function pull() {
   if (pulling) return; pulling = true;
-  const analysisOnly = state.active === 'garden';
+  const analysisOnly = isArtworkScene(state.active);
   try {
     const f = await api.frame(seq, analysisOnly);
     // A scene change may occur while IPC is in flight. Discard the wrong format.
-    if (!f || analysisOnly !== (state.active === 'garden') || (!analysisOnly && !f.pixels)) return;
+    if (!f || analysisOnly !== isArtworkScene(state.active) || (!analysisOnly && !f.pixels)) return;
     latest = f; seq = f.seq;
     if (!analysisOnly) {
       if (source.width !== f.width || source.height !== f.height) { source.width = f.width; source.height = f.height; }
@@ -72,12 +73,12 @@ function renderArtworkPortal(context) {
   // the right edge for the frame's slight departure from a parallelogram.
   ctx.transform(.87, -h * .095 / w, w * .04 / h, .84, w * .06, h * .14);
   let rendered;
-  if (state.active === 'garden') {
+  if (isArtworkScene(state.active)) {
     // Quarter as many artwork pixels, then upscale once inside the crisp portal.
     const gw = w / 2, gh = h / 2;
-    if (gardenCanvas.width !== gw || gardenCanvas.height !== gh) { gardenCanvas.width = gw; gardenCanvas.height = gh; }
-    rendered = host.render(gardenCtx, { ...context, w: gw, h: gh, frame: null });
-    if (rendered) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; ctx.drawImage(gardenCanvas, 0, 0, w, h); }
+    if (artworkCanvas.width !== gw || artworkCanvas.height !== gh) { artworkCanvas.width = gw; artworkCanvas.height = gh; }
+    rendered = host.render(artworkCtx, { ...context, w: gw, h: gh, frame: null });
+    if (rendered) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; ctx.drawImage(artworkCanvas, 0, 0, w, h); }
   } else rendered = host.render(ctx, context);
   ctx.restore(); return rendered;
 }
@@ -113,17 +114,17 @@ function tick(now) {
   if (canvas.width !== w) { canvas.width = w; canvas.height = h; previous.width = w; previous.height = h; crossfadeAt = -10000; }
   const live = latest && Date.now() - latest.at < 2000;
   const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready;
-  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && state.active !== 'garden' ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
+  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && !isArtworkScene(state.active) ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
   if (host.id !== state.active || activation !== state.activation) {
-    if (state.active !== 'garden') gardenCanvas.width = gardenCanvas.height = 1;
-    // Never crossfade a previous camera scene over the garden's artwork.
-    if (state.active === 'garden') { previousCtx.fillStyle = '#0c101c'; previousCtx.fillRect(0, 0, w, h); }
+    if (!isArtworkScene(state.active)) artworkCanvas.width = artworkCanvas.height = 1;
+    // Enter artwork without carrying the previous camera image into the scene.
+    if (isArtworkScene(state.active)) { previousCtx.fillStyle = state.active === 'garden' ? '#0c101c' : '#b49bca'; previousCtx.fillRect(0, 0, w, h); }
     else previousCtx.drawImage(canvas, 0, 0);
     crossfadeAt = now; host.activate(state.active, context, activation !== state.activation); activation = state.activation;
   }
   ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
   // Artwork scenes remain alive without camera packets. Only interaction needs them.
-  const artworkOnly = state.active === 'monsters' || state.active === 'garden';
+  const artworkOnly = isArtworkScene(state.active);
   const visible = !!state.active && (artworkOnly || (state.active === 'robots' ? robotLive : live));
   if (!visible) ambient(w, h, context.time);
   else if (!(artworkOnly ? renderArtworkPortal(context) : renderCameraPortal(context))) { ambient(w, h, context.time); if (!artworkOnly) camera(ctx, source, w, h, .5); }
@@ -131,7 +132,7 @@ function tick(now) {
   const transition = (now - crossfadeAt) / 1400;
   if (transition < 1) { const fade = Math.max(0, Math.min(1, transition)); ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade); ctx.drawImage(previous, 0, 0, w, h); ctx.globalAlpha = 1; }
   frames++;
-  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, sceneWidth: state.active === 'garden' ? gardenCanvas.width : w, sceneHeight: state.active === 'garden' ? gardenCanvas.height : h, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
+  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, sceneWidth: artworkOnly ? artworkCanvas.width : w, sceneHeight: artworkOnly ? artworkCanvas.height : h, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key.toLowerCase() === 'o') api.command('controls');

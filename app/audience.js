@@ -53,6 +53,15 @@ function ambient(w, h, time) {
 function portalPath(w, h) {
   ctx.moveTo(w * .06, h * .14); ctx.lineTo(w * .92, h * .045); ctx.lineTo(w * .97, h * .87); ctx.lineTo(w * .1, h * .98); ctx.closePath();
 }
+function renderCameraPortal(context) {
+  const { frame, w, h, time } = context;
+  if (frame) camera(ctx, frame, w, h);
+  else ambient(w, h, time);
+  // Keep camera coordinates aligned across the opening and its tinted surround.
+  ctx.save(); ctx.beginPath(); portalPath(w, h); ctx.clip();
+  const rendered = host.render(ctx, context);
+  ctx.restore(); return rendered;
+}
 function renderArtworkPortal(context) {
   const { w, h } = context;
   const backdrop = ctx.createLinearGradient(0, 0, w, h);
@@ -75,11 +84,16 @@ function renderArtworkPortal(context) {
 function finishComposition(w, h, time, cameraLive) {
   // Every world shares the angled frame and pink/lavender surround.
   ctx.save();
-  const wash = ctx.createLinearGradient(0, 0, w, h); wash.addColorStop(0, '#ffa0d055'); wash.addColorStop(1, '#8272db44');
+  const cameraScene = ['heat', 'lines', 'robots'].includes(state.active);
+  const wash = ctx.createLinearGradient(0, 0, w, h);
+  wash.addColorStop(0, cameraScene ? '#ff8fcf99' : '#ffa0d055');
+  wash.addColorStop(1, cameraScene ? '#627aeb99' : '#8272db44');
   ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); portalPath(w, h); ctx.fill('evenodd');
   ctx.strokeStyle = '#ffbadb70'; ctx.lineWidth = w * .018; ctx.beginPath(); portalPath(w, h); ctx.stroke();
   if (state.active !== 'monsters' && state.active !== 'garden') {
+    ctx.save(); ctx.beginPath(); portalPath(w, h); ctx.clip();
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
+    ctx.restore();
   }
   ctx.fillStyle = '#fcedf6'; ctx.font = `500 ${w * .015}px sans-serif`; ctx.fillText('R E V E R I E', w * .055, h * .075);
   ctx.font = `${w * .011}px monospace`; ctx.textAlign = 'right'; ctx.fillText('A SHARED DAYDREAM', w * .95, h * .075); ctx.textAlign = 'left';
@@ -112,7 +126,7 @@ function tick(now) {
   const artworkOnly = state.active === 'monsters' || state.active === 'garden';
   const visible = !!state.active && (artworkOnly || (state.active === 'robots' ? robotLive : live));
   if (!visible) ambient(w, h, context.time);
-  else if (!(artworkOnly ? renderArtworkPortal(context) : host.render(ctx, context))) { ambient(w, h, context.time); if (!artworkOnly) camera(ctx, source, w, h, .5); }
+  else if (!(artworkOnly ? renderArtworkPortal(context) : renderCameraPortal(context))) { ambient(w, h, context.time); if (!artworkOnly) camera(ctx, source, w, h, .5); }
   finishComposition(w, h, context.time, live);
   const transition = (now - crossfadeAt) / 1400;
   if (transition < 1) { const fade = Math.max(0, Math.min(1, transition)); ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade); ctx.drawImage(previous, 0, 0, w, h); ctx.globalAlpha = 1; }

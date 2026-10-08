@@ -50,7 +50,7 @@ try {
   await operator.evaluate(() => window.installation.command('next'));
   const stopped = await operator.evaluate(() => window.installation.state());
   assert(!stopped.cloud.streaming); assert(!stopped.cloud.ready); assert.notEqual(stopped.active, 'robots');
-  await operator.waitForFunction(() => document.querySelector('#log-lines').textContent.includes('Local peer and signaling close requested'), null, { timeout: 5000 });
+  await operator.waitForFunction(() => document.querySelector('#log-lines').textContent.includes('signaling close handshake completed'), null, { timeout: 6000 });
   const report = { gracefulCleanup: true, checkedAt: new Date().toISOString(), packagedBuild: true, livePhysicalCamera: true, provider: 'decart/lucy-2-5/realtime', returnedFrames: live.cloud.frames, observedSeconds: 10, changingAudienceVideo: before !== after, audienceFps: live.rendering.fps, frameAgeMs: live.rendering.robotFrameAge, stoppedOnExit: true, paidConnections: 1, imagesSaved: false };
   await writeFile('test-results/lucy-live.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));

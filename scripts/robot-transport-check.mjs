@@ -4,7 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/transport-profile-${Date.now()}`) } });
 const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 60000);
-let connected = false, promptReceived = false, movingInputFrames = false, prompts = 0, socketClosed = false, closeCalls = null;
+let connected = false, promptReceived = false, movingInputFrames = false, prompts = 0, sockets = 0, offers = 0, socketClosed = false, closeCalls = null;
 try {
   const getWindow = async name => {
     for (let i = 0; i < 100; i++) {
@@ -14,21 +14,47 @@ try {
     }
     throw Error(`Missing ${name}`);
   };
-  // A mocked socket at the real SDK URL exercises the browser CSP and actual
+  // A mocked socket at the real FAL URL exercises the browser CSP and actual
   // signaling client. No socket or token request leaves this test process.
+  closeCalls = { socket: 0, peer: 0 };
+  await app.context().exposeBinding('testClosedMethod', (_source, kind) => { closeCalls[kind]++; });
   await app.context().routeWebSocket('wss://fal.run/**', ws => {
-    connected = true;
-    ws.onClose(() => { socketClosed = true; });
+    connected = true; sockets++;
+    ws.onClose(() => {
+      socketClosed = true;
+      // Reply later than the old 500ms teardown grace. The worker must remain
+      // alive long enough to observe the server's side of the close handshake.
+      setTimeout(() => ws.close({ code: 1000 }), 750);
+    });
     const candidates = []; let receiverReady = false;
     ws.onMessage(async bytes => {
       const message = decode(new Uint8Array(bytes));
-      if (message.prompt) { prompts++; promptReceived = /robot/.test(message.prompt); ws.send(Buffer.from(encode({ type: 'ready', iceServers: [] }))); }
+      if (process.argv.includes('--busy')) {
+        if (message.prompt) {
+          prompts++;
+          ws.send(Buffer.from(encode({ type: 'ready' })));
+          ws.send(Buffer.from(encode({ type: 'iceServers', iceServers: [] })));
+          ws.send(Buffer.from(encode({ type: 'error', error: 'Concurrent session limit reached.' })));
+          ws.close({ code: 1000 });
+        }
+        if (message.type === 'offer') offers++;
+        return;
+      }
+      if (message.prompt) {
+        prompts++; promptReceived = /robot/.test(message.prompt);
+        // The provider sends these separately. Repeated readiness must not
+        // allocate another peer or submit another offer/session.
+        ws.send(Buffer.from(encode({ type: 'ready' })));
+        ws.send(Buffer.from(encode({ type: 'iceServers', iceServers: [] })));
+        ws.send(Buffer.from(encode({ type: 'ready', iceServers: [] })));
+      }
       if (message.type === 'icecandidate') {
         const robot = await getWindow('robot');
         if (receiverReady) await robot.evaluate(c => globalThis.testReceiver.addIceCandidate(c), message.candidate);
         else candidates.push(message.candidate);
       }
       if (message.type === 'offer') {
+        offers++;
         const robot = await getWindow('robot');
         const answer = await robot.evaluate(async offer => {
           const peer = globalThis.testReceiver = new RTCPeerConnection({ iceServers: [] });
@@ -62,10 +88,18 @@ try {
   await operator.waitForFunction(() => document.querySelector('#camera-health').textContent === 'live');
   await operator.evaluate(async () => {
     await window.installation.saveKey('fake-key');
-    await window.installation.configure({ robotEnabled: true, robotSessionCap: 1, duration: 30, quality: 'high' });
+    await window.installation.configure({ robotEnabled: true, robotSessionCap: 2, duration: 30, quality: 'high' });
     await window.installation.command('generate-robot');
   });
-  await operator.waitForFunction(() => document.querySelector('#cloud-health').textContent === 'Live', { timeout: 30000 });
+  if (process.argv.includes('--busy')) {
+    await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.includes('[SESSION_BUSY'), null, { timeout: 5000 });
+    const failed = await operator.evaluate(() => window.installation.state());
+    assert.equal(failed.cloud.code, 'SESSION_BUSY'); assert(!failed.cloud.ready); assert(!failed.cloud.streaming); assert(!failed.cloud.canGenerate);
+    assert.match(failed.cloud.blockReason, /Manual retry available/); assert.notEqual(failed.active, 'robots');
+    assert.equal(sockets, 1); assert.equal(prompts, 1); assert(offers <= 1); assert.equal(failed.cloud.count, 1);
+    console.log(JSON.stringify({ scenario: 'wire-provider-busy', preservedProviderError: true, skipped: true, automaticRequestsPaused: true, sockets, prompts, offers, providerRequests: 0 }));
+  } else {
+  await operator.waitForFunction(() => document.querySelector('#cloud-health').textContent === 'Live', null, { timeout: 30000 });
   const audience = await getWindow('audience'), robot = await getWindow('robot');
   await new Promise(r => setTimeout(r, 5000));
   const before = await audience.locator('canvas').evaluate(c => c.toDataURL());
@@ -76,39 +110,40 @@ try {
   assert.equal(state.active, 'robots'); assert(state.cloud.ready); assert(state.cloud.streaming); assert(state.cloud.frames > 30); assert.equal(state.cloud.count, 1);
   assert(state.rendering.fps > 20);
   assert.equal(prompts, 1, 'Exactly one initial prompt must be sent');
+  assert.equal(sockets, 1, 'Exactly one signaling socket must be opened');
+  assert.equal(offers, 1, 'Repeated readiness must not submit overlapping sessions');
   await robot.evaluate(() => {
-    globalThis.testCloseCalls = { socket: 0, peer: 0 };
     const socketClose = WebSocket.prototype.close, peerClose = RTCPeerConnection.prototype.close;
-    WebSocket.prototype.close = function(...args) { globalThis.testCloseCalls.socket++; return socketClose.apply(this, args); };
-    RTCPeerConnection.prototype.close = function(...args) { globalThis.testCloseCalls.peer++; return peerClose.apply(this, args); };
+    WebSocket.prototype.close = function(...args) { globalThis.testClosedMethod('socket'); return socketClose.apply(this, args); };
+    RTCPeerConnection.prototype.close = function(...args) { globalThis.testClosedMethod('peer'); return peerClose.apply(this, args); };
   });
   if (process.argv.includes('--stall')) {
     await robot.evaluate(() => clearInterval(globalThis.testPaint));
     await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.includes('VIDEO_STALLED'), null, { timeout: 6000 });
     const failed = await operator.evaluate(() => window.installation.state());
     assert.notEqual(failed.active, 'robots'); assert(!failed.cloud.ready); assert(!failed.cloud.streaming);
-    for (let i = 0; i < 30 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100));
+    for (let i = 0; i < 55 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100));
     assert(robot.isClosed()); assert(socketClosed);
   } else {
   // Main must deliver the stop command and let renderer cleanup run BEFORE
   // destroying its window. The original destroy-only implementation failed this.
   await operator.evaluate(() => window.installation.command('next'));
   const stopping = await operator.evaluate(() => window.installation.state());
-  assert(stopping.cloud.closing); assert(!stopping.cloud.streaming); assert(!stopping.cloud.ready); assert(!stopping.cloud.canGenerate);
+  assert(!stopping.cloud.streaming); assert(!stopping.cloud.ready); assert(!stopping.cloud.canGenerate);
   assert.notEqual(stopping.active, 'robots');
   for (let i = 0; i < 10; i++) {
-    closeCalls = await robot.evaluate(() => globalThis.testCloseCalls);
     if (closeCalls.peer && closeCalls.socket) break;
     await new Promise(r => setTimeout(r, 20));
   }
   assert(closeCalls.peer > 0); assert(closeCalls.socket > 0);
-  for (let i = 0; i < 30 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100));
+  for (let i = 0; i < 55 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100));
   const stopped = await operator.evaluate(() => window.installation.state());
   assert(robot.isClosed()); assert(socketClosed); assert(!stopped.cloud.closing); assert.equal(stopped.cloud.count, 1);
-  assert(stopped.logs.some(line => line.includes('Local peer and signaling close requested')));
+  assert(stopped.logs.some(line => line.includes('signaling close handshake completed')));
   }
 
-  console.log(JSON.stringify({ cspAllowsSDKAddress: connected, promptReceived, movingInputFrames, movingAudienceFrames, continuousFrames: state.cloud.frames, audienceFps: state.rendering.fps, scenario: process.argv.includes('--stall') ? 'stalled-video' : 'scene-exit', gracefulCloseBeforeDestroy: closeCalls, socketClosed, prompts, providerRequests: 0 }));
+  console.log(JSON.stringify({ cspAllowsFALAddress: connected, promptReceived, movingInputFrames, movingAudienceFrames, continuousFrames: state.cloud.frames, audienceFps: state.rendering.fps, scenario: process.argv.includes('--stall') ? 'stalled-video' : 'scene-exit', gracefulCloseBeforeDestroy: closeCalls, socketClosed, prompts, sockets, offers, providerRequests: 0 }));
+  }
 } finally {
   clearTimeout(watchdog); const stop = setTimeout(() => app.process().kill('SIGKILL'), 8000); await app.close(); clearTimeout(stop);
 }

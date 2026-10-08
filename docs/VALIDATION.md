@@ -106,3 +106,27 @@ Shutdown now removes the scene immediately, sends an explicit stop command, clos
 Pre-video concurrency rejection now reports `SESSION_BUSY`. The app keeps the failed attempt in both caps, persists a 60-second manual retry wait, and pauses automatic Lucy requests. Retrying retains any prior-session interval and all other eligibility checks. Tests cover classification, persistence, no automatic retry, session/hour caps, previous-session intervals, and the exact provider message in Electron.
 
 A fresh real-provider check at **13:44:37–13:44:50 UTC** succeeded in the rebuilt packaged app: 164 returned frames during ten seconds of observation, changing audience output, 30 fps audience rendering, and a latest-frame age of 58 ms. The log confirms explicit local cleanup ran before window teardown. One bounded paid connection was used; no imagery was saved. This confirms current service availability and client cleanup, not a server acknowledgement that a concurrency slot has been released or a guarantee against future provider limits.
+
+
+## October 8 — acknowledged shutdown and repeat-session investigation
+
+**Repeated live sessions remain blocked by an upstream concurrency refusal. Do not treat one successful session as a resolution.**
+
+At 14:04:46 UTC, a trace of the prior packaged build reproduced the refusal with exactly one socket, one prompt and one offer. The worker disappeared without a socket close event. The old fixed 500 ms grace did not establish that the close handshake had completed.
+
+The revised transport uses the existing FAL MessagePack/WebRTC protocol with a single-use native socket, normal close code 1000 and a four-second close-event deadline. Main holds the lock for cleanup, with a five-second outer deadline. It cancels connecting sockets, does not reconnect/replay, and records controlled lifecycle events. Provider refusals received during pending offer creation take precedence over late-send/close errors.
+
+A real two-session test used the physical camera, existing key, five-minute interval and saved caps:
+
+| UTC | Result | Evidence |
+| --- | --- | --- |
+| 14:13:32–14:13:46 | Live session succeeded and closed cleanly | 165 returned frames in ten seconds; 30 fps audience rendering; one socket, prompt and offer. Close code 1000, clean=true, received 1,046 ms after close was requested. |
+| 14:18:32–14:18:34 | Provider refused the next session | Exactly one new socket and prompt; the upstream concurrent-session error arrived before an offer was sent. The socket also closed cleanly, after 1,038 ms. |
+
+The second refusal initially exposed a generic-error race in the new adapter. That race is corrected and covered by a unit test and an Electron test that closes the provider socket during offer creation. No further paid requests were made after the refusal. Automatic Lucy requests are paused in the real profile; all attempt history and limits remain intact. Original 30-second scene duration, five-minute interval and other operator settings were restored. No images, tokens, socket URLs, SDP or ICE addresses were saved. Safe trace: `test-results/lucy-sessions.json`; earlier trace: `test-results/lucy-sessions-before-acknowledged-close.json`.
+
+Validation: 27 unit tests pass. Offline Electron checks pass for scene exit, paused duration limit, setup timeout, provider refusal, moving input/output, delayed close acknowledgment (750 ms), and stalled returned video. An additional wire-level refusal check confirms SESSION_BUSY, scene skipping and automatic-request suspension. The app and ZIP are rebuilt; private configuration files are excluded.
+
+For FAL investigation, use endpoint `decart/lucy-2-5/realtime`, the two UTC intervals above, and the exact provider error `Concurrent session limit reached.` The observed clean FAL socket closure does not prove its upstream Decart session was released; the client cannot inspect or reset that upstream quota through the documented signaling interface.
+
+Repeat check (paid opt-in only): `REVERIE_LIVE_CHECK=1 node scripts/lucy-session-check.mjs --retry --repeat`. It stops on the first refusal and never bypasses the configured interval or caps.

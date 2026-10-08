@@ -1,21 +1,23 @@
-import { fal } from '@fal-ai/client';
+import { openLucySignaling } from './core/lucy-signaling.js';
 import { usableDimensions, usablePixels } from './core/robot-result.js';
 // This isolated service sends current camera frames and publishes current Lucy
 // video frames. There is no snapshot, JPEG cache, or substitute robot drawing.
 const api = window.installation;
 let connection, peer, stream, remote, done = false, offered = false, pendingICE = [], grace, inputTimer, watchdog;
-let job, inputSeq = -1, outputSeq = 0, inputBusy = false, lastInput = Date.now(), lastOutput = 0;
+let job, closing, inputSeq = -1, outputSeq = 0, inputBusy = false, lastInput = Date.now(), lastOutput = 0;
 function close() {
+  if (closing) return closing;
   done = true; clearTimeout(grace); clearInterval(inputTimer); clearInterval(watchdog);
-  try { connection?.close(); } catch {} try { peer?.close(); } catch {}
+  closing = connection?.close() || Promise.resolve({ acknowledged: true, code: null, noSocket: true });
+  try { peer?.close(); } catch {}
   stream?.getTracks().forEach(t => t.stop()); remote?.getTracks().forEach(t => t.stop());
+  return closing;
 }
 function fail(code = 'CLIENT_ERROR', detail) { if (done) return; close(); api.complete({ code, detail }); }
-api.onStop(({ id }) => {
-  close();
-  // Keep the renderer alive briefly so socket/peer close traffic can be sent.
-  // This acknowledges local cleanup, not server-side release of the quota slot.
-  setTimeout(() => api.closed(id), 500);
+api.onStop(async ({ id }) => {
+  const result = await close();
+  // A socket close handshake still does not acknowledge upstream quota release.
+  api.closed({ id, ...result });
 });
 window.addEventListener('securitypolicyviolation', event => { if (event.effectiveDirective === 'connect-src') fail('SIGNALING_BLOCKED'); });
 async function offer(iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]) {
@@ -90,7 +92,13 @@ try {
     if (Date.now() - lastInput > 2000) fail('CAMERA_LOST');
     else if (lastOutput && Date.now() - lastOutput > 2000) fail('VIDEO_STALLED');
   }, 250);
-  connection = fal.realtime.connect('decart/lucy-2-5/realtime', { connectionKey: crypto.randomUUID(), maxBuffering: 40, throttleInterval: 0, tokenProvider: async () => { api.stage('authenticating'); const token = await api.token(); if (!token || done) throw Error('Authentication failed'); api.stage('signaling'); return token; }, onResult: data => receive(data).catch(() => fail('SIGNALING')), onError: error => fail('SIGNALING', error?.message) });
-  connection.send({ prompt: 'Transform each visible person into a friendly realistic white ceramic and brushed-metal humanoid robot with dark mechanical joints and small cyan lights. Follow their movements continuously in realtime. Preserve the exact number of people, their poses, body sizes, positions, overlaps, perspective and framing. Preserve the original room, objects, lighting and background. No additional people or robots, no text, no camera movement.', enable_prompt_expansion: false });
-} catch { fail('CLIENT_ERROR'); }
+  api.stage('authenticating');
+  const token = await api.token(); if (!token || done) throw Error('Authentication failed');
+  api.stage('signaling');
+  connection = openLucySignaling({ token,
+    input: { prompt: 'Transform each visible person into a friendly realistic white ceramic and brushed-metal humanoid robot with dark mechanical joints and small cyan lights. Follow their movements continuously in realtime. Preserve the exact number of people, their poses, body sizes, positions, overlaps, perspective and framing. Preserve the original room, objects, lighting and background. No additional people or robots, no text, no camera movement.', enable_prompt_expansion: false },
+    onResult: receive, onError: detail => fail('SIGNALING', detail),
+    onDiagnostic: (event, detail) => api.diagnostic({ event, ...detail })
+  });
+} catch (error) { fail('CLIENT_ERROR', error?.message); }
 window.addEventListener('beforeunload', close);

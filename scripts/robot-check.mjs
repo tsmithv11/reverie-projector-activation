@@ -22,7 +22,7 @@ for (const scenario of process.argv[2] ? [process.argv[2]] : ['scene-exit', 'pau
     await operator.waitForFunction(() => document.querySelector('#camera-health').textContent === 'live');
     // Block provider traffic; feed synthetic live frames across the exact worker
     // boundary to exercise scheduling, frame replacement and connection cleanup.
-    await app.evaluate(() => { globalThis.fetch = () => new Promise(() => {}); });
+    await app.evaluate(() => { globalThis.pendingRobotFetch = []; globalThis.fetch = () => new Promise(resolve => globalThis.pendingRobotFetch.push(resolve)); });
     await operator.evaluate(async scenario => {
       await window.installation.saveKey('fake-test-key');
       await window.installation.configure({ robotEnabled: true, duration: 10, quality: 'high', robotSessionCap: scenario === 'provider-busy' ? 2 : 1 });

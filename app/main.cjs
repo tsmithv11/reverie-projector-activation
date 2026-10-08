@@ -123,12 +123,12 @@ function stopRobot(code = 'CLIENT_ERROR', detail) {
     clearTimeout(closing.timer);
     if (win && !win.isDestroyed()) win.destroy();
     robot = null; robotClosing = null; cloud.closing = false; gate.finish();
-    log('robot-disconnected', mode === 'graceful' ? 'Local peer and signaling close requested before window teardown; provider release is not acknowledged.' : 'Cleanup deadline reached; service forcibly closed. Provider release may be delayed.');
+    log('robot-disconnected', mode === 'not-opened' ? 'Local media released; no signaling socket was opened.' : mode === 'graceful' ? 'Peer closed; signaling close handshake completed before window teardown. Upstream quota release is not acknowledged.' : 'Signaling close was not acknowledged before the cleanup deadline. Provider release may be delayed.');
     broadcast(); resolve();
   };
   cloud.closing = true; broadcast();
   if (!win || win.isDestroyed() || win.webContents.isCrashed()) closing.finish('forced');
-  else { closing.timer = setTimeout(() => closing.finish('forced'), 2000); send(win, 'robot-stop', { id }); }
+  else { closing.timer = setTimeout(() => closing.finish('forced'), 5000); send(win, 'robot-stop', { id }); }
   return promise;
 }
 function syncRobot() {
@@ -237,7 +237,12 @@ app.whenReady().then(() => {
     const id = robotJob?.id;
     try { const token = await mintLucyToken(key); return id === robotJob?.id ? token : null; } catch (error) { if (id === robotJob?.id) stopRobot(error.code || 'AUTH_NETWORK'); return null; }
   });
-  ipcMain.on('robot-closed', (e, id) => { if (robotClosing && allowed(e, robotClosing.win) && id === robotClosing.id) robotClosing.finish('graceful'); });
+  ipcMain.on('robot-closed', (e, result) => { if (robotClosing && allowed(e, robotClosing.win) && result?.id === robotClosing.id) robotClosing.finish(result.noSocket === true ? 'not-opened' : result.acknowledged === true ? 'graceful' : 'forced'); });
+  ipcMain.on('robot-diagnostic', (e, data) => {
+    if (!allowed(e, robot) || !['socket-created', 'socket-open', 'prompt-sent', 'offer-sent', 'socket-closed'].includes(data?.event)) return;
+    const suffix = data.event === 'socket-closed' ? ` / code=${Number.isInteger(data.code) ? data.code : 'unknown'} / clean=${data.acknowledged === true}` : '';
+    log('robot-transport', `${data.event}${suffix}`);
+  });
   ipcMain.on('robot-stage', (e, phase) => { if (robotClosing || !allowed(e, robot) || !['authenticating', 'signaling', 'connecting-video', 'receiving-video'].includes(phase)) return; robotPhase = phase; cloud.phase = phase; cloud.message = `Lucy: ${phase.replaceAll('-', ' ')} · 25 second limit`; log('robot-stage', phase); broadcast(); });
   ipcMain.on('robot-result', (e, result) => { if (!allowed(e, robot)) return; stopRobot(result?.code, result?.detail); });
   createOperator(); createAudience(); createEngine();

@@ -6,10 +6,14 @@ const api = window.installation, canvas = document.querySelector('canvas'), ctx 
 const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
 const robotCanvas = document.createElement('canvas'), robotCtx = robotCanvas.getContext('2d');
 const previous = document.createElement('canvas'), previousCtx = previous.getContext('2d');
+const gardenCanvas = document.createElement('canvas'), gardenCtx = gardenCanvas.getContext('2d', { alpha: false });
+gardenCanvas.width = gardenCanvas.height = 1;
 let state = await api.state(), latest = null, pulling = false, robotLatest = null, robotPulling = false, robotSeq = -1, robotSession = null, seq = -1;
 let last = 0, deadline = 0, frames = 0, lastReport = performance.now(), fps = 0, crossfadeAt = -10000, failure = '', activation = -1;
 const adaptive = new AdaptiveQuality(), host = new SceneHost(registry, (id, phase) => { failure = `Scene ${id} failed during ${phase}; isolated fallback active`; });
 function receiveState(s) {
+  // Refetch even the current packet when changing between analysis and video.
+  if ((state.active === 'garden') !== (s.active === 'garden')) { seq = -1; latest = null; }
   state = s;
   if (s.cloud.sessionId !== robotSession) { robotSession = s.cloud.sessionId; robotLatest = null; robotSeq = -1; }
 }
@@ -28,9 +32,16 @@ async function pullRobot() {
 }
 async function pull() {
   if (pulling) return; pulling = true;
+  const analysisOnly = state.active === 'garden';
   try {
-    const f = await api.frame(seq);
-    if (f) { latest = f; seq = f.seq; if (source.width !== f.width || source.height !== f.height) { source.width = f.width; source.height = f.height; } sourceCtx.putImageData(new ImageData(new Uint8ClampedArray(f.pixels), f.width, f.height), 0, 0); }
+    const f = await api.frame(seq, analysisOnly);
+    // A scene change may occur while IPC is in flight. Discard the wrong format.
+    if (!f || analysisOnly !== (state.active === 'garden') || (!analysisOnly && !f.pixels)) return;
+    latest = f; seq = f.seq;
+    if (!analysisOnly) {
+      if (source.width !== f.width || source.height !== f.height) { source.width = f.width; source.height = f.height; }
+      sourceCtx.putImageData(new ImageData(new Uint8ClampedArray(f.pixels), f.width, f.height), 0, 0);
+    }
   } catch {} finally { pulling = false; }
 }
 function ambient(w, h, time) {
@@ -42,7 +53,7 @@ function ambient(w, h, time) {
 function portalPath(w, h) {
   ctx.moveTo(w * .06, h * .14); ctx.lineTo(w * .92, h * .045); ctx.lineTo(w * .97, h * .87); ctx.lineTo(w * .1, h * .98); ctx.closePath();
 }
-function renderWonderfulThings(context) {
+function renderArtworkPortal(context) {
   const { w, h } = context;
   const backdrop = ctx.createLinearGradient(0, 0, w, h);
   backdrop.addColorStop(0, '#d799c5'); backdrop.addColorStop(.5, '#a996d1'); backdrop.addColorStop(1, '#7567a6');
@@ -51,16 +62,23 @@ function renderWonderfulThings(context) {
   // Fit the whole landscape into the angled opening, with 1% overscan at
   // the right edge for the frame's slight departure from a parallelogram.
   ctx.transform(.87, -h * .095 / w, w * .04 / h, .84, w * .06, h * .14);
-  const rendered = host.render(ctx, context);
+  let rendered;
+  if (state.active === 'garden') {
+    // Quarter as many artwork pixels, then upscale once inside the crisp portal.
+    const gw = w / 2, gh = h / 2;
+    if (gardenCanvas.width !== gw || gardenCanvas.height !== gh) { gardenCanvas.width = gw; gardenCanvas.height = gh; }
+    rendered = host.render(gardenCtx, { ...context, w: gw, h: gh, frame: null });
+    if (rendered) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; ctx.drawImage(gardenCanvas, 0, 0, w, h); }
+  } else rendered = host.render(ctx, context);
   ctx.restore(); return rendered;
 }
 function finishComposition(w, h, time, cameraLive) {
-  // The same angled portal and branding follows every scene.
+  // Every world shares the angled frame and pink/lavender surround.
   ctx.save();
   const wash = ctx.createLinearGradient(0, 0, w, h); wash.addColorStop(0, '#ffa0d055'); wash.addColorStop(1, '#8272db44');
   ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); portalPath(w, h); ctx.fill('evenodd');
   ctx.strokeStyle = '#ffbadb70'; ctx.lineWidth = w * .018; ctx.beginPath(); portalPath(w, h); ctx.stroke();
-  if (state.active !== 'monsters') {
+  if (state.active !== 'monsters' && state.active !== 'garden') {
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
   }
   ctx.fillStyle = '#fcedf6'; ctx.font = `500 ${w * .015}px sans-serif`; ctx.fillText('R E V E R I E', w * .055, h * .075);
@@ -81,19 +99,25 @@ function tick(now) {
   if (canvas.width !== w) { canvas.width = w; canvas.height = h; previous.width = w; previous.height = h; crossfadeAt = -10000; }
   const live = latest && Date.now() - latest.at < 2000;
   const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready;
-  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
-  if (host.id !== state.active || activation !== state.activation) { previousCtx.drawImage(canvas, 0, 0); crossfadeAt = now; host.activate(state.active, context, activation !== state.activation); activation = state.activation; }
+  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && state.active !== 'garden' ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
+  if (host.id !== state.active || activation !== state.activation) {
+    if (state.active !== 'garden') gardenCanvas.width = gardenCanvas.height = 1;
+    // Never crossfade a previous camera scene over the garden's artwork.
+    if (state.active === 'garden') { previousCtx.fillStyle = '#0c101c'; previousCtx.fillRect(0, 0, w, h); }
+    else previousCtx.drawImage(canvas, 0, 0);
+    crossfadeAt = now; host.activate(state.active, context, activation !== state.activation); activation = state.activation;
+  }
   ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
-  // The painted bay stays alive during stillness or camera loss; only its
-  // interactive effects need fresh motion. Other camera scenes keep their gate.
-  const visible = !!state.active && (state.active === 'monsters' || (state.active === 'robots' ? robotLive : live));
+  // Artwork scenes remain alive without camera packets. Only interaction needs them.
+  const artworkOnly = state.active === 'monsters' || state.active === 'garden';
+  const visible = !!state.active && (artworkOnly || (state.active === 'robots' ? robotLive : live));
   if (!visible) ambient(w, h, context.time);
-  else if (!(state.active === 'monsters' ? renderWonderfulThings(context) : host.render(ctx, context))) { ambient(w, h, context.time); if (state.active !== 'monsters') camera(ctx, source, w, h, .5); }
+  else if (!(artworkOnly ? renderArtworkPortal(context) : host.render(ctx, context))) { ambient(w, h, context.time); if (!artworkOnly) camera(ctx, source, w, h, .5); }
   finishComposition(w, h, context.time, live);
   const transition = (now - crossfadeAt) / 1400;
   if (transition < 1) { const fade = Math.max(0, Math.min(1, transition)); ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade); ctx.drawImage(previous, 0, 0, w, h); ctx.globalAlpha = 1; }
   frames++;
-  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
+  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, sceneWidth: state.active === 'garden' ? gardenCanvas.width : w, sceneHeight: state.active === 'garden' ? gardenCanvas.height : h, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key.toLowerCase() === 'o') api.command('controls');

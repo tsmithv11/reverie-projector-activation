@@ -51,7 +51,7 @@ Raw evidence: `test-results/soak.json`, `test-results/soak-before-pacing-fix.jso
 - **Detection:** a lightweight 320×320-input COCO detector with at most 24 displayed boxes. It can miss small, dark, occluded or partial people and misclassify robot-like figures. There is no ground-truth crowd accuracy measurement. Group motion effects continue without detections; butterflies need occupied regions.
 - **Hardware:** no physical USB reconnect, camera permission-denial dialog, projector cable reconnect, actual projector, real dense crowd, older M-series MacBook, Intel MacBook or Linux hardware qualification. Those paths have code and selected simulated tests; they are not physically certified.
 - **Duration:** short real-time endurance runs plus accelerated logic tests do not prove multi-hour reliability. Run an eight-hour rehearsal on the venue hardware with the actual camera, projector, lighting and audience geometry.
-- **Artwork:** Small wonderful things uses locally bundled reference-matched raster art, subtle GPU breathing/water displacement and a separate animated pink creature. The garden uses vector growth. These local scenes do not use realtime generative video. The line effect is a local edge map, not 3D reconstruction.
+- **Artwork:** Small wonderful things uses locally bundled reference-matched raster art, subtle GPU breathing/water displacement and a separate animated pink creature. The garden uses original bundled botanical artwork, procedural foliage, local stem growth and butterfly wing animation. These local scenes do not use realtime generative video. The line effect is a local edge map, not 3D reconstruction.
 - **Distribution:** the macOS ARM64 bundle runs locally but is unsigned/not notarized and uses the default Electron app icon. Source supports Linux with setup/build commands; no Linux binary was tested or delivered.
 - **Supervision:** internal renderer/worker recovery does not restart a dead main process, crashed OS, disconnected power, or failed projector. An event deployment should arrange an external relaunch/supervision policy.
 
@@ -142,3 +142,24 @@ The artwork fills the existing angled portal. Five painted creatures remain in t
 - Verified native asset loading, shader initialization, jump apex and settled state; reviewed screenshots of the angled portal, idle state, jump, low quality and GPU fallback.
 - Evidence: `test-results/wonderful-check.json` and `test-results/wonderful-*.png`. All motion input was synthetic; no provider call or audience recording was needed.
 - The rebuilt Mac ARM64 app launched successfully and rendered this scene at 30 fps at high quality. Its bundled scene code and both PNG assets match the tested source build; credentials and test fixtures are absent from the archive.
+
+## Night garden revision — October 8, 2026
+
+The garden now fits inside the shared angled portal with a pink/lavender surround. Dormant ferns, buds, haze and pollen remain visible without a camera. The center contains only the botanical landscape, with no title or instruction text. Movement lasting at least 120 ms grows stems rooted in the meadow, followed by leaves and detailed pink, lavender or ivory blossoms. Sustained occupied stillness from the shared motion analyzer attracts twelve individually animated blue, rose and amber butterflies; renewed local movement makes them leave. Flowers last 30–46 seconds and gradually fade back into the empty garden. Mushrooms were removed.
+
+The original 1536×1024 transparent botanical atlas is bundled in `assets/scenes/garden/`; its built-in image generation prompt and provenance are retained beside it. The garden does not draw camera images. Entry uses an opaque midnight wash rather than a snapshot of the previous camera scene, and the scene-error fallback excludes camera imagery too.
+
+Validation:
+
+- All 49 unit tests passed, including five new garden behavior tests and the existing eight simulated hours of bounded motion updates.
+- Initial `npm run test:garden` rehearsal before the separate artwork canvas: 30 fps at 1920×1080 with the maximum 112 flowers; 30 fps at 1280×720 with 48 flowers; 30 fps after camera packets stopped.
+- Observed zero direct or transition-snapshot camera draws throughout garden entry, growth, stillness, camera loss, and an intentionally triggered rendering failure. Red and green input images produce pixel-identical standalone garden output.
+- Inspected idle, blooming, butterfly, settled and missing-art screenshots under `test-results/garden-*.png`. Missing atlas art retains procedural blossoms and the dormant garden.
+- Rebuilt the Mac application and ZIP. An isolated launch of the packaged app loaded the botanical atlas and rendered the garden at 30 fps with no page errors; details are in `test-results/garden-packaged.json`.
+- Performance figures describe synthetic rehearsal on this Mac, not a physical crowd/projector acceptance test. The existing local detector still supplies occupied stillness, with the detection limits documented above.
+
+### Garden performance pass — October 8, 2026
+
+The garden artwork now renders at 960×540 / 800×450 / 640×360 for High / Balanced / Low, then scales once inside the existing full-resolution frame. This reduces artwork pixel count by 75%; the other scenes, border, branding, flower limits and animation timing keep their previous settings. The garden's audience frame requests carry only motion/stillness metadata, so no camera-image upload is performed in that renderer. Camera sensing and the shared full-frame slot remain available for other scenes and robot prewarming.
+
+All 49 unit tests and the extended `test:garden` rehearsal passed. Measured 30 fps with 112 flowers at 960×540 artwork / 1920×1080 output, and 30 fps at 640×360 artwork on Low. The real IPC contract check returned 2,044 characters of metadata instead of the sampled packet's 921,600 camera-pixel bytes (before counting the full packet's other data). No image, edge map, energy grid or preview was included in the compact response. The test observed zero camera uploads and zero camera draws during the garden, including re-entry and failure. Switching to the heat scene restored 1920×1080 scene rendering and full image packets. This is reduced work per frame, not a claim of higher FPS beyond the installation's existing 30 fps cap. The upscaled garden was visually inspected inside the pink portal.

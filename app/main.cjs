@@ -208,7 +208,14 @@ app.whenReady().then(() => {
   }
   handle('command', () => operator, command);
   handle('audience-command', () => audience, (name, value) => { if (['controls', 'fullscreen', 'pause', 'next', 'select'].includes(name)) command(name, value); });
-  handle('frame', () => audience, seq => frame && frame.seq !== seq && Date.now() - frame.at < 2000 ? frame : null);
+  handle('frame', () => audience, (seq, analysisOnly = false) => {
+    if (!frame || frame.seq === seq || Date.now() - frame.at >= 2000) return null;
+    if (analysisOnly !== true) return frame;
+    // The garden needs no camera pixels, edge image, energy grid or JPEG preview.
+    // Keep the shared full packet intact for camera scenes and robot prewarming.
+    const { points = [], calm = [], amount = 0 } = frame.motion || {};
+    return { seq: frame.seq, at: frame.at, demo: frame.demo, boxes: frame.boxes, motion: { points, calm, amount } };
+  });
   handle('preview', () => operator, () => Date.now() - (frame?.at || 0) < 2000 ? preview : '');
   handle('robot-frame', () => audience, seq => robotOutput && robotOutput.seq !== seq && Date.now() - robotOutput.at < 2000 ? robotOutput : null);
   handle('robot-decoded', () => audience, id => {

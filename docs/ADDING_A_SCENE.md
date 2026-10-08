@@ -39,6 +39,6 @@ export default class Ripples extends Scene {
 }
 ```
 
-Register with `import Ripples from './ripples.js'` and `registry.ripples = Ripples`, plus `{ id: 'ripples', name: 'Ripples in the room', color: '#ffa0d0' }` in SCENES. The shared portal frame, title and transition are composed after your scene renders.
+Register with `import Ripples from './ripples.js'` and `registry.ripples = Ripples`, plus `{ id: 'ripples', name: 'Ripples in the room', color: '#ffa0d0' }` in SCENES. The shared branding and transition are composed after your scene renders. All scenes use the portal frame; the garden and painted bay are fitted inside it with a pink/lavender surround. The garden uses a camera-free entry wash. Artwork-only scenes must also opt into camera-independent rendering and exclude camera fallbacks in `audience.js`.
 
 Keep all arrays bounded. Use normalized positions; respect the quality/intensity inputs; do not retain camera packets. Dispose images, workers, timers and graphics resources in cleanup if you add any. An exception is isolated, but expensive synchronous work can still stall that renderer until the watchdog replaces it.

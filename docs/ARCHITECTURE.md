@@ -32,13 +32,14 @@ The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement
 | Camera plane | 960×540 / 640×360 / 480×270 |
 | Local motion/edge plane | 384×216 / 256×144 / 160×90 |
 | Output canvas | 1920×1080 / 1600×900 / 1280×720; CSS contains it on the display |
+| Garden artwork canvas | 960×540 / 800×450 / 640×360; upscaled once inside the full-resolution portal; released on scene exit |
 | Detection | 24 boxes; COCO person only, score ≥0.34 |
 | Motion | 24×14 grid; 48 strongest motion points; 24 occupied still points |
 | Monsters | 7 chasers + up to 12 audience overlays |
 | Bubbles | 110 / 80 / 45; maximum lifetime 8 seconds |
 | Pop bursts | 28, fading within 0.6 seconds |
-| Garden | 210 / 140 / 70 plants; maximum lifetime 42 seconds; 12 butterflies |
-| Transition | One old render snapshot, 1.4 seconds; no second active scene |
+| Garden | 112 / 80 / 48 plants; maximum lifetime 46 seconds; 12 butterflies; cached botanical artwork and foliage |
+| Transition | One old render snapshot, 1.4 seconds; no second active scene. Garden entry uses an opaque midnight wash instead of the preceding camera scene. |
 | Cloud | One live connection; one input and one output frame; one IPC in flight per direction; no queue |
 | Logs | 80 in-memory entries; approximately 2 MiB on disk |
 
@@ -55,6 +56,8 @@ The engine aspect-contains the sensor in a 16:9 camera plane and applies optiona
 `initialize(context)` allocates resources; `activate(context)` starts the scene; `update(context)` advances simulation; `render(canvas2D, context)` draws; `deactivate()` ends activity; `cleanup()` releases resources. All methods must be synchronous, short and idempotent for cleanup. Each activation uses a fresh instance. `SceneHost` catches lifecycle/update/render exceptions, cleans up, quarantines the ID for the renderer lifetime and lets the scheduler continue. A hard infinite loop is recovered by restarting the audience process, not by catching an exception. No scene may own a camera, network session or accumulating request queue.
 
 Context: `{w,h,time,dt,quality,intensity,frame,analysis,robotVideo,demo}`. `time` and `dt` are seconds; `dt` is clamped to 0.1; quality is 0/1/2. `frame` is a shared CanvasImageSource or null. `analysis` has `{boxes,motion}` with empty, safe defaults when unavailable. `robotVideo` is the canvas containing the latest decoded Lucy video frame, if any. Inputs are read-only by convention. Scene resources and simulations must tolerate changes in w/h and quality without allocating per-frame textures.
+
+Only the garden renders its artwork at half the output width and height, using 75% fewer artwork pixels while keeping the border and branding at normal output resolution. Plant counts and animation timing are unchanged. During this scene, `frame(seq, true)` returns `{seq,at,demo,boxes,motion:{points,calm,amount}}`; camera pixels, edges, energy grids and JPEG previews are omitted before IPC serialization, and the audience does not upload camera images. The engine still supplies normal local motion/person analysis and retains its full packet for other scenes and robot prewarming. Scene changes refetch the correct packet format and discard requests that finish after their format becomes obsolete.
 
 ## Security and data lifecycle
 

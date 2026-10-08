@@ -62,9 +62,11 @@ The endpoint is **`decart/lucy-2-5/realtime`**, verified against the [official A
 | Machine dreaming | Live camera conversion through Lucy 2.5 / FAL | Returned robot video follows the current camera continuously. Unavailable results are skipped, with diagnostics only in the operator console. |
 | Small wonderful things | Detailed pastel bay artwork matched to the supplied creature/Golden Gate reference, fitted inside the angled portal; local breathing and water animation | Five painted creatures stay anchored. One separate pink creature rests in the water and hops when motion persists for 120 ms; motion also releases bubbles. Hops have a landing cooldown. Stillness stops new bubbles/hops; the bay remains visible without a camera. Artwork is bundled locally; no cloud calls. |
 | An outline of us | Local Sobel edges, camera silhouette layer, cyan person boxes and artistic perspective grid | No inferred depth, distance, velocity, emotion, or identity. |
-| A garden of possibility | Local motion-grid growth, occupancy from person detections, smoothed stillness | Plants fade after 24–42 seconds; butterflies gather after sustained low motion. Pink `#ffa0d0`, lavender `#E7D2F6`, blue `#4d65ff`, orange `#FF734A`, purple `#271431` were read from [Reverie](https://www.reveriesummit.com/); leaf green is a complementary addition. |
+| A garden of possibility | Original botanical artwork with local motion-driven growth and occupied stillness | Midnight garden fitted inside the shared angled portal with a pink/lavender surround, layered ferns, dormant buds and drifting pollen. No centered title or instruction text. Movement grows ground-rooted plants and gradually opens pink, lavender, and ivory flowers; occupied stillness brings out detailed blue, rose, and amber butterflies with independently folding wings. Plants fade after 30–46 seconds. No camera image is shown, including entry transitions or scene failure. The garden remains alive without camera input. |
 
 No persistent person IDs, sensitive attributes, biometric identification, audio capture, or default audience-image saving. Demo figures and boxes are **synthetic** and labeled accordingly. Crowds are treated as moving regions; severe occlusion, small distant figures and poor lighting reduce detection coverage. Motion effects remain active without person detections; butterflies specifically require occupied regions.
+
+The garden has a separate, lighter rendering path: artwork is drawn at 960×540 on High (800×450 Balanced, 640×360 Low), then fitted inside the normal-resolution pink frame. This uses 75% fewer artwork pixels without reducing the flower count. Its audience window receives only motion/stillness data rather than unused camera images; camera sensing and other scenes retain their normal quality.
 
 ## Operator controls and recovery
 
@@ -84,6 +86,7 @@ Settings save to the application user-data directory (`.runtime` for source runs
 ```sh
 npm test               # scheduler, motion, cloud gate, lifecycle and accelerated crowd stress
 npm run test:wonderful # reference scene, motion/idle behavior, camera loss and visual snapshots
+npm run test:garden    # growth, stillness, camera invisibility, quality and visual snapshots
 npm run test:robots    # live frame handoff, connection limits, stalls and offline WebRTC roundtrip
 npm run test:smoke     # macOS desktop, mock webcam, workers, camera restart, offline cloud
 npm run test:soak      # 10-minute real-time synthetic crowd run

@@ -1,13 +1,14 @@
+import { isLiveScene } from './core/live-scenes.cjs';
 const api = window.installation, $ = id => document.getElementById(id);
 let state = await api.state(), signature = '', deviceSignature = '';
-const icons = { heat: '⌗', robots: '♙', monsters: '☁', lines: '⌖', garden: '✳' };
+const icons = { heat: '⌗', robots: '♙', monsters: '☁', lines: '⌖', garden: '✳', cartoon: '✎' };
 async function configure(patch) { try { state = await api.configure(patch); render(state); } catch { $('notice').textContent = 'Could not save settings. Check that the settings folder is writable.'; } }
 function sceneList(s) {
   const key = JSON.stringify(s.settings.scenes); if (key === signature) return; signature = key;
   $('scene-list').replaceChildren();
   s.settings.scenes.forEach((entry, index) => {
     const scene = s.scenes.find(item => item.id === entry.id), card = document.createElement('div'); card.className = 'scene-card'; card.dataset.id = entry.id;
-    const art = document.createElement('button'); art.className = `scene-art ${entry.id}`; art.title = `Show ${scene.name}`; art.disabled = !entry.enabled; const symbol = document.createElement('span'); symbol.textContent = icons[entry.id] || '✳'; art.append(symbol); art.onclick = () => api.command('select', entry.id);
+    const art = document.createElement('button'); art.className = `scene-art ${entry.id}`; art.title = `Show ${scene.name}`; art.disabled = !entry.enabled; const symbol = document.createElement('span'); symbol.textContent = icons[entry.id] || '✳'; art.append(symbol); art.onclick = () => { if (isLiveScene(entry.id)) $('live-scene').value = entry.id; api.command('select', entry.id); };
     const content = document.createElement('div'); content.className = 'scene-card-content';
     const number = document.createElement('div'); number.className = 'scene-number'; number.textContent = `WORLD ${String(index + 1).padStart(2, '0')} · LIVE`;
     const title = document.createElement('div'); title.className = 'scene-title'; title.textContent = scene.name;
@@ -38,17 +39,25 @@ function render(s) {
   $('decart-key-status').textContent = s.cloud.providers.decart ? 'Key configured' : 'Not configured';
   $('key-status').textContent = s.cloud.providers.fal ? 'Key configured' : 'Not configured'; $('key-path').textContent = `Stored privately: ${s.keyPath}`;
   $('cloud-note').textContent = `${s.cloud.message}${s.cloud.code ? ` [${s.cloud.code} · ${s.cloud.phase || 'image check'}]` : ''} ${s.cloud.blockReason && s.cloud.blockReason !== s.cloud.message ? s.cloud.blockReason : ''} · ${s.cloud.count}/${s.cloud.cap} connection attempts this session. Maximum 12/hour. Decart first; one FAL backup attempt if needed.`;
+  if (s.cloud.streaming || s.cloud.closing) $('live-scene').value = s.cloud.sceneId;
+  for (const option of $('live-scene').options) option.disabled = !s.settings.scenes.some(scene => scene.id === option.value && scene.enabled);
+  if (!$('live-scene').selectedOptions[0] || $('live-scene').selectedOptions[0].disabled) $('live-scene').value = [...$('live-scene').options].find(option => !option.disabled)?.value || 'robots';
+  $('live-scene').disabled = s.cloud.streaming || s.cloud.closing;
   $('generate-robot').disabled = !s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming && !(s.cloud.closing && s.cloud.state === 'connecting');
-  $('generate-robot').textContent = s.cloud.closing ? (s.cloud.state === 'connecting' ? 'Cancel FAL backup' : 'Closing connection…') : s.cloud.streaming ? `Stop live connection · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : 'Start live robot scene';
+  $('generate-robot').textContent = s.cloud.closing ? (s.cloud.state === 'connecting' ? 'Cancel FAL backup' : 'Closing connection…') : s.cloud.streaming ? `Stop live connection · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : `Start live ${$('live-scene').value === 'cartoon' ? 'cartoon' : 'robot'} scene`;
   document.querySelector('.privacy-pill').textContent = s.cloud.streaming ? '● Live camera → Lucy / Decart' : '● Local processing';
   $('robot-availability').textContent = s.cloud.display;
-  const robotCard = document.querySelector('.scene-card[data-id=robots]');
-  if (robotCard) { robotCard.querySelector('.scene-art').disabled = (!s.cloud.ready && !s.cloud.canGenerate && !s.cloud.canRetry) || !s.settings.scenes.find(x => x.id === 'robots').enabled; robotCard.querySelector('.scene-number').textContent = s.cloud.ready ? 'LIVE · LUCY 2.5' : s.cloud.streaming ? 'CONNECTING LIVE VIDEO' : 'LUCY 2.5 · LIVE VIDEO'; }
+  for (const entry of s.settings.scenes.filter(scene => isLiveScene(scene.id))) {
+    const card = document.querySelector(`.scene-card[data-id=${entry.id}]`);
+    const current = s.cloud.sceneId === entry.id;
+    if (card) { card.querySelector('.scene-art').disabled = !entry.enabled || (!s.cloud.canGenerate && !s.cloud.canRetry && !(current && (s.cloud.ready || s.cloud.streaming))); card.querySelector('.scene-number').textContent = current && s.cloud.ready ? 'LIVE · LUCY 2.5' : current && s.cloud.streaming ? 'CONNECTING LIVE VIDEO' : 'LUCY 2.5 · LIVE VIDEO'; }
+  }
   $('log-lines').textContent = s.logs.join('\n');
   for (const card of document.querySelectorAll('.scene-card')) { card.classList.toggle('active', card.dataset.id === s.active); card.classList.toggle('disabled', !s.settings.scenes.find(x => x.id === card.dataset.id).enabled); }
 }
 api.onState(render); render(state);
-for (const [id, name] of [['generate-robot','generate-robot'],['output','output'],['pause','pause'],['next','next'],['fullscreen','fullscreen'],['reconnect','reconnect'],['logs','logs'],['quit','quit']]) $(id).onclick = () => api.command(name === 'generate-robot' ? (state.cloud.streaming || state.cloud.closing ? 'stop-robot' : state.cloud.canRetry ? 'retry-robot' : name) : name);
+for (const [id, name] of [['generate-robot','generate-robot'],['output','output'],['pause','pause'],['next','next'],['fullscreen','fullscreen'],['reconnect','reconnect'],['logs','logs'],['quit','quit']]) $(id).onclick = () => api.command(name === 'generate-robot' ? (state.cloud.streaming || state.cloud.closing ? 'stop-robot' : state.cloud.canRetry ? 'retry-robot' : name) : name, name === 'generate-robot' ? $('live-scene').value : undefined);
+$('live-scene').onchange = () => render(state);
 for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality'],['robot-minutes','robotMinutes'],['robot-cap','robotSessionCap']]) $(id).onchange = () => configure({ [key]: $(id).value });
 for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).onchange = () => configure({ [key]: $(id).checked });
 $('intensity').oninput = () => { $('intensity-value').textContent = `${$('intensity').value}%`; }; $('intensity').onchange = () => configure({ intensity: Number($('intensity').value) / 100 });

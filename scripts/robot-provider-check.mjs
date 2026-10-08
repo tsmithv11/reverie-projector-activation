@@ -2,6 +2,7 @@ import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
+const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
 const scenarios = ['missing-keys', 'decart-only', 'both-auth-fail', 'backup-cap', 'cancel-fallback', 'decart-timeout', 'decart-live'];
 for (const scenario of scenarios) {
   const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/providers-${scenario}-${Date.now()}`) } });
@@ -48,15 +49,15 @@ for (const scenario of scenarios) {
       throw Error(`State deadline: ${scenario}`);
     };
     await waitState(state => state.camera.state === 'live' && state.outputAvailable);
-    await operator.evaluate(async scenario => {
+    await operator.evaluate(async ({ scenario, sceneId }) => {
       if (scenario !== 'missing-keys') await window.installation.saveKey('fake-decart-key', 'decart');
       if (!['missing-keys', 'decart-only'].includes(scenario)) await window.installation.saveKey('fake-fal-key', 'fal');
       await window.installation.configure({ robotEnabled: true, robotSessionCap: scenario === 'backup-cap' ? 1 : 2, duration: 60 });
-      await window.installation.command('generate-robot');
-    }, scenario);
+      await window.installation.command('generate-robot', sceneId);
+    }, { scenario, sceneId });
     if (scenario === 'cancel-fallback') {
       await waitState(state => state.cloud.closing);
-      await operator.evaluate(() => window.installation.command('stop-robot'));
+      await operator.evaluate(async sceneId => { const state = await window.installation.state(); await window.installation.configure({ scenes: state.settings.scenes.map(scene => ({ ...scene, enabled: scene.id === sceneId ? false : scene.enabled })) }); }, sceneId);
     } else if (scenario === 'decart-live') {
       const robot = await windowFor('robot');
       await robot.waitForFunction(() => document.querySelector('video'));
@@ -73,7 +74,7 @@ for (const scenario of scenarios) {
       });
       await waitState(state => state.cloud.ready);
       const live = await operator.evaluate(() => window.installation.state());
-      assert.equal(live.cloud.provider, 'decart'); assert.equal(live.active, 'robots'); assert.equal(live.cloud.count, 1);
+      assert.equal(live.cloud.provider, 'decart'); assert.equal(live.active, sceneId); assert.equal(live.cloud.count, 1);
       await operator.evaluate(() => window.installation.command('next'));
     }
     await waitState(state => !state.cloud.streaming && !state.cloud.closing);
@@ -81,13 +82,13 @@ for (const scenario of scenarios) {
     const expected = scenario === 'missing-keys' ? [] : ['both-auth-fail', 'decart-timeout'].includes(scenario) ? ['decart', 'fal'] : ['decart'];
     assert.deepEqual(await app.evaluate(() => globalThis.providerTokenCalls), expected);
     if (['decart-only', 'both-auth-fail', 'decart-timeout'].includes(scenario)) assert.equal(state.cloud.code, 'AUTH_REJECTED');
-    assert.equal(state.cloud.count, expected.length); assert(!state.cloud.ready); assert.notEqual(state.active, 'robots');
+    assert.equal(state.cloud.count, expected.length); assert(!state.cloud.ready); assert.notEqual(state.active, sceneId);
     assert.equal(state.cloud.providers.decart, scenario !== 'missing-keys');
     assert(!JSON.stringify(state).includes('fake-decart-key')); assert(!JSON.stringify(state).includes('fake-fal-key'));
     assert.equal(sockets, ['cancel-fallback', 'decart-timeout', 'decart-live'].includes(scenario) ? 1 : 0);
     if (sockets) assert(closed);
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ scenario, pass: true, attempts: expected, providerRequests: 0 }));
+    console.log(JSON.stringify({ scenario, sceneId, pass: true, attempts: expected, providerRequests: 0 }));
   } finally {
     clearTimeout(watchdog); const timer = setTimeout(() => app.process().kill('SIGKILL'), 8000); await app.close(); clearTimeout(timer);
   }

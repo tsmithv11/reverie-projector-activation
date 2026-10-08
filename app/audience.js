@@ -2,6 +2,7 @@ import { registry } from './scenes/index.js';
 import { SceneHost } from './core/scene-host.js';
 import { AdaptiveQuality } from './core/performance.js';
 import { camera } from './scenes/base.js';
+import { isLiveScene } from './core/live-scenes.cjs';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
 const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
 const robotCanvas = document.createElement('canvas'), robotCtx = robotCanvas.getContext('2d');
@@ -85,7 +86,7 @@ function renderArtworkPortal(context) {
 function finishComposition(w, h, time, cameraLive) {
   // Every world shares the angled frame and pink/lavender surround.
   ctx.save();
-  const cameraScene = ['heat', 'lines', 'robots'].includes(state.active);
+  const cameraScene = ['heat', 'lines'].includes(state.active) || isLiveScene(state.active);
   const wash = ctx.createLinearGradient(0, 0, w, h);
   wash.addColorStop(0, cameraScene ? '#ff8fcf99' : '#ffa0d055');
   wash.addColorStop(1, cameraScene ? '#627aeb99' : '#8272db44');
@@ -113,7 +114,7 @@ function tick(now) {
   const quality = adaptive.level, w = [1280, 1600, 1920][quality], h = w * 9 / 16;
   if (canvas.width !== w) { canvas.width = w; canvas.height = h; previous.width = w; previous.height = h; crossfadeAt = -10000; }
   const live = latest && Date.now() - latest.at < 2000;
-  const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready;
+  const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready && state.cloud.sceneId === state.active;
   const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && !isArtworkScene(state.active) ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
   if (host.id !== state.active || activation !== state.activation) {
     if (!isArtworkScene(state.active)) artworkCanvas.width = artworkCanvas.height = 1;
@@ -125,7 +126,7 @@ function tick(now) {
   ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
   // Artwork scenes remain alive without camera packets. Only interaction needs them.
   const artworkOnly = isArtworkScene(state.active);
-  const visible = !!state.active && (artworkOnly || (state.active === 'robots' ? robotLive : live));
+  const visible = !!state.active && (artworkOnly || (isLiveScene(state.active) ? robotLive : live));
   if (!visible) ambient(w, h, context.time);
   else if (!(artworkOnly ? renderArtworkPortal(context) : renderCameraPortal(context))) { ambient(w, h, context.time); if (!artworkOnly) camera(ctx, source, w, h, .5); }
   finishComposition(w, h, context.time, live);
@@ -139,7 +140,7 @@ document.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'f') api.command('fullscreen');
   if (e.key === ' ') { e.preventDefault(); api.command('pause'); }
   if (e.key === 'ArrowRight') api.command('next');
-  if (/^[1-5]$/.test(e.key)) api.command('select', state.scenes[Number(e.key) - 1].id);
+  if (/^[1-9]$/.test(e.key) && state.scenes[Number(e.key) - 1]) api.command('select', state.scenes[Number(e.key) - 1].id);
 });
 window.addEventListener('beforeunload', () => host.cleanup());
 requestAnimationFrame(tick);

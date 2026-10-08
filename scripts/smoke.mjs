@@ -15,11 +15,11 @@ try {
   await new Promise(r => setTimeout(r, 5000));
   await operator.screenshot({ path: 'test-results/operator.png', fullPage: true });
   const samples = [];
-  for (const id of ['heat','robots','monsters','lines','garden']) {
+  for (const id of ['heat','robots','monsters','lines','garden','cartoon']) {
     await operator.evaluate(id => window.installation.command('select', id), id);
     await new Promise(r => setTimeout(r, 2500));
     const sample = await operator.evaluate(() => window.installation.state());
-    if (id === 'robots') { assert.notEqual(sample.active, 'robots'); assert.equal(sample.cloud.ready, false); }
+    if (['robots', 'cartoon'].includes(id)) { assert.notEqual(sample.active, id); assert.equal(sample.cloud.ready, false); }
     await audience.screenshot({ path: `test-results/scene-${id}.png` }); samples.push(sample);
   }
   await operator.evaluate(() => window.installation.command('pause'));

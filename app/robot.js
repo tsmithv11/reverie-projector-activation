@@ -1,6 +1,7 @@
 import { decartModel, openDecartConnection } from './core/decart-connection.js';
 import { openLucySignaling } from './core/lucy-signaling.js';
 import { usableDimensions, usablePixels } from './core/robot-result.js';
+import { CARTOON_PROMPT } from './core/live-scenes.cjs';
 // This isolated service sends current camera frames and publishes current Lucy
 // video frames. There is no snapshot, JPEG cache, or substitute robot drawing.
 const api = window.installation;
@@ -97,7 +98,7 @@ try {
   api.stage('authenticating');
   const token = await api.token(); if (!token || done) throw Error('Authentication failed');
   api.stage('signaling');
-  const prompt = 'Transform each visible person into a friendly realistic white ceramic and brushed-metal humanoid robot with dark mechanical joints and small cyan lights. Follow their movements continuously in realtime. Preserve the exact number of people, their poses, body sizes, positions, overlaps, perspective and framing. Preserve the original room, objects, lighting and background. No additional people or robots, no text, no camera movement.';
+  const prompt = job.sceneId === 'cartoon' ? CARTOON_PROMPT : 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.';
   if (job.provider === 'decart') {
     api.stage('connecting-video');
     connection = openDecartConnection({ token, stream, prompt, onRemoteStream: receiveStream, onError: fail, onStage: phase => api.stage(phase) });

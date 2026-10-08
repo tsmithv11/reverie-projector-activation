@@ -2,7 +2,7 @@
 
 1. Add a module under `app/scenes/`. It receives the existing shared camera and analysis; it must not open another camera.
 2. Import its constructor and add it to `registry` in `app/scenes/index.js`.
-3. Add `{id,name,color}` to `SCENES` in `app/core/settings.cjs`. The scheduler, persisted-setting reconciliation, playlist and controls automatically include it. Optional: add a tile symbol in `app/operator.js`. Numeric keyboard shortcuts currently cover the first five scenes.
+3. Add `{id,name,color}` to `SCENES` in `app/core/settings.cjs`. The scheduler, persisted-setting reconciliation, playlist and controls automatically include it. Optional: add a tile symbol in `app/operator.js`. Numeric keyboard shortcuts cover the first nine scenes (six currently registered).
 4. Run `npm run build`, try transitions, camera loss, both quality extremes and cleanup, then package again. Do not change the scheduler or capture pipeline.
 
 Example `app/scenes/ripples.js`:
@@ -40,5 +40,7 @@ export default class Ripples extends Scene {
 ```
 
 Register with `import Ripples from './ripples.js'` and `registry.ripples = Ripples`, plus `{ id: 'ripples', name: 'Ripples in the room', color: '#ffa0d0' }` in SCENES. The shared branding and transition are composed after your scene renders. All scenes use the portal frame; the garden and painted bay are fitted inside it with a pink/lavender surround. The garden uses a camera-free entry wash. Artwork-only scenes must also opt into camera-independent rendering and exclude camera fallbacks in `audience.js`.
+
+Live Lucy effects also need an entry in `app/core/live-scenes.cjs` and a matching prompt in the shared service. Their job carries a `sceneId` through provider fallback; only that scene becomes available after its video is decoded. They share credentials, spending limits, cooldown and one active connection.
 
 Keep all arrays bounded. Use normalized positions; respect the quality/intensity inputs; do not retain camera packets. Dispose images, workers, timers and graphics resources in cleanup if you add any. An exception is isolated, but expensive synchronous work can still stall that renderer until the watchdog replaces it.

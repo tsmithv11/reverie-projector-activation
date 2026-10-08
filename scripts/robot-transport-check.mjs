@@ -4,6 +4,9 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/transport-profile-${Date.now()}`) } });
 const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 60000);
+const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
+const expectedPrompt = sceneId === 'cartoon' ? /entire scene.*2D cartoon/ : /robot/;
+let directPrompt;
 const useDecart = process.argv.includes('--decart-fallback');
 let decartSockets = 0, decartPrompts = 0, decartClosed = false;
 let connected = false, promptReceived = false, movingInputFrames = false, prompts = 0, sockets = 0, offers = 0, socketClosed = false, closeCalls = null;
@@ -26,7 +29,7 @@ try {
     ws.onMessage(bytes => {
       const message = JSON.parse(String(bytes));
       if (message.type === 'prompt') {
-        assert.match(message.prompt, /robot/); assert.equal(message.enhance_prompt, false); decartPrompts++;
+        assert.match(message.prompt, expectedPrompt); directPrompt = message.prompt; assert.equal(message.enhance_prompt, false); decartPrompts++;
         ws.send(JSON.stringify({ type: 'error', error: 'Concurrent session limit reached.' }));
       }
     });
@@ -55,7 +58,9 @@ try {
         return;
       }
       if (message.prompt) {
-        prompts++; promptReceived = /robot/.test(message.prompt);
+        prompts++; promptReceived = expectedPrompt.test(message.prompt);
+        assert.equal(message.enable_prompt_expansion, false);
+        if (useDecart) assert.equal(message.prompt, directPrompt, 'Fallback must keep the requested scene prompt');
         // The provider sends these separately. Repeated readiness must not
         // allocate another peer or submit another offer/session.
         ws.send(Buffer.from(encode({ type: 'ready' })));
@@ -100,17 +105,17 @@ try {
   await app.evaluate(() => { globalThis.fetch = async url => ({ ok: true, json: async () => url.includes('decart.ai') ? { apiKey: 'mock-temporary-decart-token' } : 'mock-temporary-token' }); });
   const operator = await getWindow('operator');
   await operator.waitForFunction(() => document.querySelector('#camera-health').textContent === 'live');
-  await operator.evaluate(async useDecart => {
+  await operator.evaluate(async ({ useDecart, sceneId }) => {
     await window.installation.saveKey('fake-key');
     if (useDecart) await window.installation.saveKey('fake-decart-key', 'decart');
     await window.installation.configure({ robotEnabled: true, robotSessionCap: useDecart ? 3 : 2, duration: 30, quality: 'high' });
-    await window.installation.command('generate-robot');
-  }, useDecart);
+    await window.installation.command('select', sceneId);
+  }, { useDecart, sceneId });
   if (process.argv.includes('--busy')) {
     await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.startsWith('FAL:') && document.querySelector('#cloud-note').textContent.includes('[SESSION_BUSY') && !document.querySelector('#generate-robot').textContent.includes('Closing'), null, { timeout: 5000 });
     const failed = await operator.evaluate(() => window.installation.state());
     assert.equal(failed.cloud.code, 'SESSION_BUSY'); assert(!failed.cloud.ready); assert(!failed.cloud.streaming); assert(!failed.cloud.canGenerate);
-    assert.match(failed.cloud.blockReason, /Manual retry available/); assert.notEqual(failed.active, 'robots');
+    assert.match(failed.cloud.blockReason, /Manual retry available/); assert.notEqual(failed.active, sceneId);
     assert.equal(sockets, 1); assert.equal(prompts, 1); assert(offers <= 1); assert.equal(failed.cloud.count, useDecart ? 2 : 1);
     assert.equal(decartSockets, useDecart ? 1 : 0); assert.equal(decartPrompts, useDecart ? 1 : 0);
     console.log(JSON.stringify({ scenario: useDecart ? 'both-providers-busy' : 'wire-provider-busy', decartSockets, decartPrompts, preservedProviderError: true, skipped: true, automaticRequestsPaused: true, sockets, prompts, offers, providerRequests: 0 }));
@@ -123,12 +128,13 @@ try {
   const movingAudienceFrames = before !== await audience.locator('canvas').evaluate(c => c.toDataURL());
   const state = await operator.evaluate(() => window.installation.state());
   assert(connected); assert(promptReceived); assert(movingInputFrames); assert(movingAudienceFrames);
-  assert.equal(state.active, 'robots'); assert(state.cloud.ready); assert(state.cloud.streaming); assert(state.cloud.frames > 30); assert.equal(state.cloud.count, useDecart ? 2 : 1);
+  assert.equal(state.active, sceneId); assert.equal(state.cloud.sceneId, sceneId); assert(state.cloud.ready); assert(state.cloud.streaming); assert(state.cloud.frames > 30); assert.equal(state.cloud.count, useDecart ? 2 : 1);
   assert.equal(state.cloud.provider, 'fal'); assert.equal(decartSockets, useDecart ? 1 : 0); assert.equal(decartPrompts, useDecart ? 1 : 0);
   assert(state.rendering.fps > 20);
   assert.equal(prompts, 1, 'Exactly one initial prompt must be sent');
   assert.equal(sockets, 1, 'Exactly one signaling socket must be opened');
   assert.equal(offers, 1, 'Repeated readiness must not submit overlapping sessions');
+  if (sceneId === 'cartoon') await audience.locator('canvas').screenshot({ path: 'test-results/cartoon-portal.png' });
   await robot.evaluate(() => {
     const socketClose = WebSocket.prototype.close, peerClose = RTCPeerConnection.prototype.close;
     WebSocket.prototype.close = function(...args) { globalThis.testClosedMethod('socket'); return socketClose.apply(this, args); };
@@ -138,7 +144,7 @@ try {
     await robot.evaluate(() => clearInterval(globalThis.testPaint));
     await operator.waitForFunction(() => document.querySelector('#cloud-note').textContent.includes('VIDEO_STALLED'), null, { timeout: 6000 });
     const failed = await operator.evaluate(() => window.installation.state());
-    assert.notEqual(failed.active, 'robots'); assert(!failed.cloud.ready); assert(!failed.cloud.streaming);
+    assert.notEqual(failed.active, sceneId); assert(!failed.cloud.ready); assert(!failed.cloud.streaming);
     for (let i = 0; i < 55 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100));
     assert(robot.isClosed()); assert(socketClosed);
   } else {
@@ -147,7 +153,7 @@ try {
   await operator.evaluate(() => window.installation.command('next'));
   const stopping = await operator.evaluate(() => window.installation.state());
   assert(!stopping.cloud.streaming); assert(!stopping.cloud.ready); assert(!stopping.cloud.canGenerate);
-  assert.notEqual(stopping.active, 'robots');
+  assert.notEqual(stopping.active, sceneId);
   for (let i = 0; i < 10; i++) {
     if (closeCalls.peer && closeCalls.socket) break;
     await new Promise(r => setTimeout(r, 20));
@@ -159,7 +165,7 @@ try {
   assert(stopped.logs.some(line => line.includes('signaling close handshake completed')));
   }
 
-  console.log(JSON.stringify({ decartSockets, decartPrompts, decartClosed, cspAllowsFALAddress: connected, promptReceived, movingInputFrames, movingAudienceFrames, continuousFrames: state.cloud.frames, audienceFps: state.rendering.fps, scenario: process.argv.includes('--stall') ? 'stalled-video' : 'scene-exit', gracefulCloseBeforeDestroy: closeCalls, socketClosed, prompts, sockets, offers, providerRequests: 0 }));
+  console.log(JSON.stringify({ sceneId, decartSockets, decartPrompts, decartClosed, cspAllowsFALAddress: connected, promptReceived, movingInputFrames, movingAudienceFrames, continuousFrames: state.cloud.frames, audienceFps: state.rendering.fps, scenario: process.argv.includes('--stall') ? 'stalled-video' : 'scene-exit', gracefulCloseBeforeDestroy: closeCalls, socketClosed, prompts, sockets, offers, providerRequests: 0 }));
   }
 } finally {
   clearTimeout(watchdog); const stop = setTimeout(() => app.process().kill('SIGKILL'), 8000); await app.close(); clearTimeout(stop);

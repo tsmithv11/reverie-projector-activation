@@ -24,7 +24,7 @@ test('unavailable robots are skipped by rotation and manual selection, but retai
 });
 
 test('an unavailable robot-only playlist waits safely and recovers when live video arrives', () => {
-  const settings = sanitize({ scenes: ['robots','heat','monsters','lines','garden'].map(id => ({ id, enabled: id === 'robots' })) });
+  const settings = sanitize({ scenes: ['robots','heat','monsters','lines','garden','cartoon'].map(id => ({ id, enabled: id === 'robots' })) });
   const scheduler = new Scheduler(settings, 0);
   scheduler.availability('robots', false, 0); assert.equal(scheduler.active, null);
   scheduler.tick(60001); assert.equal(scheduler.active, null);

@@ -13,6 +13,7 @@ const { PROVIDER_NAMES, configuredProviders, backupProvider } = require('./core/
 const { resolveKeyPath } = require('./core/key-path.cjs');
 const { outputLayout, OutputPlacement } = require('./core/output-placement.cjs');
 const { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure } = require('./core/robot-status.cjs');
+const { LIVE_SCENE_IDS, isLiveScene, liveSceneEnabled, nextLiveScene } = require('./core/live-scenes.cjs');
 protocol.registerSchemesAsPrivileged([{ scheme: 'reverie', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 if (process.env.REVERIE_TEST_DIR) app.setPath('userData', process.env.REVERIE_TEST_DIR);
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
@@ -27,7 +28,7 @@ let settings = sanitize(readJSON('settings.json', defaults));
 settings.robotEnabled = false;
 if (process.argv.includes('--demo')) settings.demo = true;
 const scheduler = new Scheduler(settings, performance.now());
-scheduler.availability('robots', false, performance.now());
+for (const id of LIVE_SCENE_IDS) scheduler.availability(id, false, performance.now());
 const gate = new CloudGate(readJSON('cloud-budget.json', {}));
 let operator, audience, engine, robot, quitting = false, frame = null, preview = '', robotOutput = null, robotJob = null, robotTimer, generation = 0;
 let robotClosing = null, robotRun = null, quitAfterCleanup = false;
@@ -98,13 +99,13 @@ function restart(role) {
 function stopRobot(code = 'CLIENT_ERROR', detail) {
   if (robotClosing) {
     // Operator cancellation during cleanup must also cancel a queued backup.
-    if (['CANCELLED', 'SCENE_ENDED', 'SESSION_LIMIT', 'APP_QUIT', 'CAMERA_LOST', 'DISPLAY_LOST', 'BUDGET_WRITE'].includes(code)) { robotRun = null; cloud.state = 'waiting'; cloud.message = 'Live connection stopped. Robot scene skipped.'; }
+    if (['CANCELLED', 'SCENE_ENDED', 'SESSION_LIMIT', 'APP_QUIT', 'CAMERA_LOST', 'DISPLAY_LOST', 'BUDGET_WRITE'].includes(code)) { robotRun = null; cloud.state = 'waiting'; cloud.message = 'Live connection stopped. Live scene skipped.'; }
     return robotClosing.promise;
   }
   if (!gate.busy) return Promise.resolve();
   clearTimeout(robotTimer);
   code = classifyRobotFailure(code, detail);
-  const run = robotRun, nextProvider = backupProvider(run, code), provider = robotJob?.provider;
+  const run = robotRun, nextProvider = backupProvider(run, code), provider = robotJob?.provider, sceneId = run?.sceneId || cloud.sceneId;
   if (!nextProvider) robotRun = null;
   if (code === 'SESSION_BUSY' && !robotOutput) {
     gate.rejectConcurrency(Date.now());
@@ -113,19 +114,19 @@ function stopRobot(code = 'CLIENT_ERROR', detail) {
   }
   const elapsed = Date.now() - robotStartedAt;
   if (['SCENE_ENDED', 'CANCELLED', 'SESSION_LIMIT', 'APP_QUIT'].includes(code)) {
-    cloud = { state: 'waiting', message: code === 'SESSION_LIMIT' ? 'Live session ended at its time limit. Robot scene skipped until the next allowed session.' : 'Live connection closed. Waiting for the next robot scene.' };
+    cloud = { state: 'waiting', sceneId, message: code === 'SESSION_LIMIT' ? 'Live session ended at its time limit. Live scene skipped until the next allowed session.' : 'Live connection closed. Waiting for the next live scene.' };
     log('robot-stopped', `${code} / ${elapsed}ms / ${robotOutput?.seq || 0} live frames`);
   } else {
     if (!FAILURES[code]) code = 'CLIENT_ERROR';
     const diagnostic = safeDiagnostic(safeDiagnostic(detail, keys.decart), keys.fal);
     const message = `${PROVIDER_NAMES[provider] || 'Lucy'}: ${FAILURES[code]}${diagnostic && code !== 'SESSION_BUSY' ? ` Provider detail: ${diagnostic}` : ''}`;
-    cloud = { state: nextProvider ? 'connecting' : 'error', provider, code, phase: robotPhase, message: `${message} ${nextProvider ? 'Closing Decart before trying the FAL backup.' : 'Robot scene skipped.'}`, elapsed };
-    log(nextProvider ? 'robot-fallback' : 'robot-skipped', `${PROVIDER_NAMES[provider]} / ${code} / ${robotPhase} / ${elapsed}ms / ${nextProvider ? 'Trying FAL after cleanup.' : 'Robot scene skipped.'}`);
+    cloud = { state: nextProvider ? 'connecting' : 'error', sceneId, provider, code, phase: robotPhase, message: `${message} ${nextProvider ? 'Closing Decart before trying the FAL backup.' : 'Live scene skipped.'}`, elapsed };
+    log(nextProvider ? 'robot-fallback' : 'robot-skipped', `${sceneId} / ${PROVIDER_NAMES[provider]} / ${code} / ${robotPhase} / ${elapsed}ms / ${nextProvider ? 'Trying FAL after cleanup.' : 'Live scene skipped.'}`);
     if (diagnostic) log('robot-detail', diagnostic);
   }
   const win = robot, id = robotJob?.id;
   robotOutput = null; robotDecoded = false; robotPresented = false; robotJob = null;
-  scheduler.availability('robots', false, performance.now());
+  for (const id of LIVE_SCENE_IDS) scheduler.availability(id, false, performance.now());
   // destroy() does not run beforeunload. Ask the service to close its WebRTC
   // peer and signaling socket first, and hold the gate until cleanup finishes.
   let resolve;
@@ -138,10 +139,10 @@ function stopRobot(code = 'CLIENT_ERROR', detail) {
     robot = null; robotClosing = null; cloud.closing = false; gate.finish();
     log('robot-disconnected', mode === 'not-opened' ? 'Local media released; no signaling socket was opened.' : mode === 'graceful' ? 'Peer closed; signaling close handshake completed before window teardown. Upstream quota release is not acknowledged.' : 'Signaling close was not acknowledged before the cleanup deadline. Provider release may be delayed.');
     if (nextProvider && robotRun === run) {
-      const eligible = !quitting && settings.robotEnabled && !settings.demo && settings.scenes.some(s => s.id === 'robots' && s.enabled) && audience && !audience.isDestroyed() && audience.isVisible() && camera.state === 'live' && frame && Date.now() - frame.at < 2000;
+      const eligible = !quitting && settings.robotEnabled && !settings.demo && liveSceneEnabled(settings, run.sceneId) && audience && !audience.isDestroyed() && audience.isVisible() && camera.state === 'live' && frame && Date.now() - frame.at < 2000;
       const blocked = eligible ? gate.reserveFallback(Date.now(), settings, !!keys[nextProvider]) : 'cancelled';
       if (!blocked) { run.index++; beginRobotAttempt(run); }
-      else { robotRun = null; cloud.state = 'error'; cloud.message = `Decart failed. FAL backup unavailable (${blocked}). Robot scene skipped.`; log('robot-skipped', `FAL backup / ${blocked}`); }
+      else { robotRun = null; cloud.state = 'error'; cloud.message = `Decart failed. FAL backup unavailable (${blocked}). Live scene skipped.`; log('robot-skipped', `FAL backup / ${blocked}`); }
     }
     broadcast(); resolve();
   };
@@ -155,19 +156,19 @@ function syncRobot() {
   const now = Date.now();
   if (camera.state !== 'live' || !frame || now - frame.at > 2000) { stopRobot('CAMERA_LOST'); return; }
   if (robotOutput && now - robotOutput.at > 2000) { stopRobot('VIDEO_STALLED'); return; }
-  if (robotDecoded && scheduler.active === 'robots' && !robotPresented) {
+  if (robotDecoded && scheduler.active === robotJob.sceneId && !robotPresented) {
     robotPresented = true; robotStopAt = Math.min(robotStopAt, now + settings.duration * 1000);
     log('robot-live', `Displaying continuous Lucy video; ${settings.duration}s session limit`);
   }
-  if (robotPresented && scheduler.active !== 'robots') stopRobot('SCENE_ENDED');
+  if (robotPresented && scheduler.active !== robotJob.sceneId) stopRobot('SCENE_ENDED');
   else if (now >= robotStopAt) stopRobot('SESSION_LIMIT');
   else if (!robotPresented && !robotJob.manual && scheduler.paused) stopRobot('CANCELLED');
 }
-function startRobot(manual = false, retry = false) {
-  if (quitting || !audience || audience.isDestroyed() || !audience.isVisible() || !(retry ? cloudStatus().canRetry : cloudStatus().canGenerate)) return;
+function startRobot(manual = false, retry = false, sceneId = 'robots') {
+  if (!liveSceneEnabled(settings, sceneId) || quitting || !audience || audience.isDestroyed() || !audience.isVisible() || !(retry ? cloudStatus().canRetry : cloudStatus().canGenerate)) return;
   const providers = configuredProviders(keys);
   if (gate.reserve(Date.now(), settings, providers.length > 0, retry)) return;
-  robotRun = { providers, index: 0, manual };
+  robotRun = { providers, index: 0, manual, sceneId };
   beginRobotAttempt(robotRun);
 }
 function beginRobotAttempt(run) {
@@ -177,9 +178,9 @@ function beginRobotAttempt(run) {
   // Pausing rotation never leaves a paid stream running indefinitely.
   robotStopAt = robotStartedAt + 40000 + settings.duration * 1000;
   try { writeJSON('cloud-budget.json', gate.snapshot()); } catch { stopRobot('BUDGET_WRITE'); settings.robotEnabled = false; return; }
-  robotJob = { id: ++generation, manual: run.manual, provider };
-  cloud = { state: 'connecting', provider, message: `Connecting live camera to ${PROVIDER_NAMES[provider]} · 25 second connection limit`, phase: robotPhase };
-  log('robot-start', `${PROVIDER_NAMES[provider]} live camera conversion; viewers stay on the current scene until video arrives`);
+  robotJob = { id: ++generation, manual: run.manual, provider, sceneId: run.sceneId };
+  cloud = { state: 'connecting', provider, sceneId: run.sceneId, message: `Connecting ${SCENES.find(scene => scene.id === run.sceneId).name} to ${PROVIDER_NAMES[provider]} · 25 second connection limit`, phase: robotPhase };
+  log('robot-start', `${run.sceneId} / ${PROVIDER_NAMES[provider]} live camera conversion; viewers stay on the current scene until video arrives`);
   robot = makeWindow('robot', { width: 640, height: 360 });
   robotTimer = setTimeout(() => stopRobot('TIMEOUT'), 25000);
   broadcast();
@@ -198,9 +199,10 @@ app.whenReady().then(() => {
     const old = settings; settings = sanitize({ ...settings, ...value });
     writeJSON('settings.json', settings); scheduler.configure(settings, performance.now());
     if (old.displayId !== settings.displayId || old.fullscreen !== settings.fullscreen) placeOutput();
-    if (!settings.robotEnabled || settings.demo || !settings.scenes.some(s => s.id === 'robots' && s.enabled)) {
+    if (!settings.robotEnabled || settings.demo || (robotRun ? !liveSceneEnabled(settings, robotRun.sceneId) : !settings.scenes.some(s => isLiveScene(s.id) && s.enabled))) {
       if (gate.busy) stopRobot('CANCELLED');
-      robotOutput = null; robotDecoded = false; scheduler.availability('robots', false, performance.now());
+      robotOutput = null; robotDecoded = false;
+      for (const id of LIVE_SCENE_IDS) scheduler.availability(id, false, performance.now());
       if (!cloud.code) cloud = { state: 'waiting', message: '' };
     }
     syncRobot(); broadcast(); return state();
@@ -212,12 +214,17 @@ app.whenReady().then(() => {
   function command(name, value) {
     const now = performance.now();
     if (name === 'select') {
-      if (value === 'robots' && !cloudStatus().ready) {
-        if (robotRun) { robotRun.manual = true; if (robotJob) robotJob.manual = true; } else if (cloudStatus().canRetry) startRobot(true, true); else if (cloudStatus().canGenerate) startRobot(true); else log('robot-skipped', cloudStatus().message);
-      } else { if (value !== 'robots') stopRobot('CANCELLED'); scheduler.select(value, now); }
+      if (!settings.scenes.some(scene => scene.id === value && scene.enabled)) return;
+      if (isLiveScene(value) && !(cloudStatus().ready && robotJob?.sceneId === value)) {
+        if (robotRun?.sceneId === value) { robotRun.manual = true; if (robotJob) robotJob.manual = true; }
+        else if (gate.busy) log('robot-skipped', 'Another live scene is connecting or playing.');
+        else if (cloudStatus().canRetry) startRobot(true, true, value);
+        else if (cloudStatus().canGenerate) startRobot(true, false, value);
+        else log('robot-skipped', cloudStatus().message);
+      } else { if (!isLiveScene(value)) stopRobot('CANCELLED'); scheduler.select(value, now); }
     }
-    if (name === 'generate-robot') startRobot(true);
-    if (name === 'retry-robot') startRobot(true, true);
+    if (name === 'generate-robot') startRobot(true, false, value || 'robots');
+    if (name === 'retry-robot') startRobot(true, true, value || cloud.sceneId || 'robots');
     if (name === 'stop-robot') stopRobot('CANCELLED');
     if (name === 'next') { scheduler.next(now); stopRobot('SCENE_ENDED'); }
     if (name === 'pause') scheduler.paused ? scheduler.resume(now) : scheduler.pause(now);
@@ -244,9 +251,9 @@ app.whenReady().then(() => {
   handle('robot-decoded', () => audience, id => {
     if (id !== robotJob?.id || !robotOutput || robotDecoded) return;
     robotDecoded = true; clearTimeout(robotTimer); robotPhase = 'live';
-    cloud = { state: 'live', provider: robotJob.provider, phase: 'live', message: `${PROVIDER_NAMES[robotJob.provider]} is continuously transforming the live camera. The connection closes when this scene ends.` };
-    scheduler.availability('robots', true, performance.now());
-    if (robotJob.manual) scheduler.select('robots', performance.now());
+    cloud = { state: 'live', sceneId: robotJob.sceneId, provider: robotJob.provider, phase: 'live', message: `${PROVIDER_NAMES[robotJob.provider]} is continuously transforming the live camera for ${SCENES.find(scene => scene.id === robotJob.sceneId).name}. The connection closes when this scene ends.` };
+    scheduler.availability(robotJob.sceneId, true, performance.now());
+    if (robotJob.manual) scheduler.select(robotJob.sceneId, performance.now());
     syncRobot(); broadcast();
   });
   handle('publish-frame', () => engine, data => {
@@ -286,7 +293,12 @@ app.whenReady().then(() => {
     if (changedMetrics.some(metric => ['bounds', 'scaleFactor', 'rotation'].includes(metric))) placeOutput();
   });
   powerSaveBlocker.start('prevent-display-sleep');
-  setInterval(() => { scheduler.tick(performance.now()); syncRobot(); if (!scheduler.paused && scheduler.until('robots', performance.now(), true) <= 15000) startRobot(); broadcast(); }, 500);
+  setInterval(() => {
+    const now = performance.now(); scheduler.tick(now); syncRobot();
+    const next = nextLiveScene(scheduler, now);
+    if (!scheduler.paused && next && scheduler.until(next, now, true) <= 15000) startRobot(false, false, next);
+    broadcast();
+  }, 500);
   setInterval(() => { if (Date.now() - cameraHeartbeat > 12000) restart('engine'); if (audience?.isVisible() && Date.now() - renderHeartbeat > 10000) restart('audience'); }, 3000);
   log('installation-start');
 });

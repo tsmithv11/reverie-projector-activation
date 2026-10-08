@@ -3,7 +3,8 @@ const SCENES = [
   { id: 'robots', name: 'Machine dreaming', color: '#a5c7d6' },
   { id: 'monsters', name: 'Small wonderful things', color: '#b4b3f6' },
   { id: 'lines', name: 'An outline of us', color: '#f3eedf' },
-  { id: 'garden', name: 'A garden of possibility', color: '#ccdcb0' }
+  { id: 'garden', name: 'A garden of possibility', color: '#ccdcb0' },
+  { id: 'cartoon', name: 'Life in cartoon', color: '#ffa0d0' }
 ];
 const defaults = { cameraId: '', displayId: '', duration: 60, quality: 'auto', intensity: 0.7, mirror: true, demo: false, fullscreen: true, robotEnabled: false, robotMinutes: 10, robotSessionCap: 40, scenes: SCENES.map(s => ({ id: s.id, enabled: true })) };
 function sanitize(input = {}) {

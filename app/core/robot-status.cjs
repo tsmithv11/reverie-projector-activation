@@ -1,3 +1,4 @@
+const { isLiveScene } = require('./live-scenes.cjs');
 const FAILURES = {
   AUTH_REJECTED: 'The provider rejected the API key. Check the key and its permissions.',
   AUTH_NETWORK: 'Could not reach provider authentication. Check the internet connection.',
@@ -40,13 +41,13 @@ function classifyRobotFailure(code, detail) {
 }
 function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh, now }) {
   let reason = gate.reason(now, settings, hasKey);
-  if (!settings.scenes.some(s => s.id === 'robots' && s.enabled)) reason = 'scene-disabled';
+  if (!settings.scenes.some(s => isLiveScene(s.id) && s.enabled)) reason = 'scene-disabled';
   else if (settings.demo) reason = 'demo';
   else if (!reason && (camera !== 'live' || !frameFresh)) reason = 'camera';
   const reasons = {
-    disabled: 'Enable Lucy 2.5 to stream live robot conversions.',
+    disabled: 'Enable Lucy 2.5 to stream live robot and cartoon scenes.',
     'missing-key': 'No Decart or FAL key found. Add a key at the path shown below.',
-    'scene-disabled': 'Enable Machine dreaming in the playlist.',
+    'scene-disabled': 'Enable Machine dreaming or Life in cartoon in the playlist.',
     demo: 'Rehearsal mode does not upload audience frames.',
     camera: 'A live camera frame is required.',
     busy: cloud.closing ? 'Closing the previous Lucy connection.' : 'Live camera streaming to Lucy.',

@@ -26,7 +26,10 @@ function render(s) {
   for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).checked = s.settings[key];
   if (document.activeElement !== $('intensity')) $('intensity').value = Math.round(s.settings.intensity * 100);
   $('intensity-value').textContent = `${Math.round(s.settings.intensity * 100)}%`;
-  $('active-name').textContent = s.scenes.find(x => x.id === s.active)?.name || 'Waiting for an available scene';
+  const sceneIndex = s.scenes.findIndex(x => x.id === s.active), scene = s.scenes[sceneIndex];
+  $('active-name').textContent = scene?.name || 'Waiting for an available scene';
+  $('scene-caption').textContent = scene ? `${String(sceneIndex + 1).padStart(2, '0')} / COLLECTIVE IMAGINATION` : 'A MOMENT OF POSSIBILITY';
+  $('scene-title').textContent = scene?.name || 'The world is still dreaming.';
   $('remaining').textContent = Math.ceil(s.remaining / 1000); $('progress').style.width = `${100 - s.remaining / (s.settings.duration * 10)}%`;
   $('pause').textContent = s.paused ? '▶  Resume rotation' : 'Ⅱ  Pause rotation'; $('rotation-label').textContent = s.paused ? 'Rotation paused' : 'Automatic rotation';
   $('fps').textContent = s.rendering.fps || '—'; $('camera-health').textContent = s.camera.state; $('detector-health').textContent = s.camera.detector === 'ready' ? `${s.camera.boxes} · ${s.camera.detectorMs} ms` : s.camera.detector;

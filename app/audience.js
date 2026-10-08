@@ -40,7 +40,7 @@ function ambient(w, h, time) {
   ctx.restore();
 }
 function finishComposition(w, h, time, cameraLive) {
-  // The same angled portal and lower-third layout follows every scene.
+  // The same angled portal and branding follows every scene.
   ctx.save();
   const wash = ctx.createLinearGradient(0, 0, w, h); wash.addColorStop(0, '#ffa0d055'); wash.addColorStop(1, '#8272db44');
   ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.moveTo(w * .06, h * .14); ctx.lineTo(w * .92, h * .045); ctx.lineTo(w * .97, h * .87); ctx.lineTo(w * .1, h * .98); ctx.closePath(); ctx.fill('evenodd');
@@ -48,10 +48,7 @@ function finishComposition(w, h, time, cameraLive) {
   const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
   ctx.fillStyle = '#fcedf6'; ctx.font = `500 ${w * .015}px sans-serif`; ctx.fillText('R E V E R I E', w * .055, h * .075);
   ctx.font = `${w * .011}px monospace`; ctx.textAlign = 'right'; ctx.fillText('A SHARED DAYDREAM', w * .95, h * .075); ctx.textAlign = 'left';
-  const scene = state.scenes.find(s => s.id === state.active);
-  ctx.font = `${w * .009}px monospace`; ctx.fillStyle = '#ecc9e5'; ctx.fillText(cameraLive ? `${String(state.scenes.findIndex(s => s.id === state.active) + 1).padStart(2, '0')} / COLLECTIVE IMAGINATION` : 'A MOMENT OF POSSIBILITY', w * .065, h * .825);
-  ctx.fillStyle = '#fff4fb'; ctx.font = `400 ${w * .038}px Georgia, serif`; ctx.fillText(cameraLive ? scene?.name || 'A shared daydream' : 'The world is still dreaming.', w * .064, h * .897);
-  if (latest?.demo && cameraLive) { ctx.textAlign = 'right'; ctx.font = `${w * .01}px monospace`; ctx.fillText('DEMO / SYNTHETIC CROWD', w * .94, h * .93); }
+  if (latest?.demo && cameraLive) { ctx.fillStyle = '#fff4fb'; ctx.textAlign = 'right'; ctx.font = `${w * .01}px monospace`; ctx.fillText('DEMO / SYNTHETIC CROWD', w * .94, h * .93); }
   ctx.restore();
 }
 function tick(now) {

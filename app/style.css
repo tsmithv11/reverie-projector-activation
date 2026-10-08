@@ -3,3 +3,4 @@
 .inline-label input[type=number]{width:74px;font-size:11px;padding:8px}
 
 .robot-availability{font-size:12px;font-weight:600;margin:18px 0 12px;color:#51314f}#cloud-note{color:#6e5577;font-size:11px}
+.current-scene{padding-bottom:18px;margin-bottom:18px;border-bottom:1px solid #eee5f0}.current-scene>span{font-size:11px;color:#8b7393}.scene-caption{font:9px/1.6 monospace;color:#8c7192;margin-top:10px}.current-scene-title{font:22px/1.25 Georgia,serif;color:#51314f;margin-top:5px}

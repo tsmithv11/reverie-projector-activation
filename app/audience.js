@@ -4,6 +4,10 @@ import { AdaptiveQuality } from './core/performance.js';
 import { camera } from './scenes/base.js';
 import { isLiveScene } from './core/live-scenes.cjs';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
+const brandLogo = new Image();
+brandLogo.src = 'brand/reverie-logo-white.svg';
+let brandLogoReady = false;
+brandLogo.decode().then(() => { brandLogoReady = true; }).catch(error => console.error('Reverie logo failed to load', error));
 const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
 const robotCanvas = document.createElement('canvas'), robotCtx = robotCanvas.getContext('2d');
 const previous = document.createElement('canvas'), previousCtx = previous.getContext('2d');
@@ -97,7 +101,11 @@ function finishComposition(w, h, time, cameraLive) {
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
     ctx.restore();
   }
-  ctx.fillStyle = '#fcedf6'; ctx.font = `500 ${w * .015}px sans-serif`; ctx.fillText('R E V E R I E', w * .055, h * .075);
+  if (brandLogoReady) {
+    const logoWidth = w * .145, logoHeight = logoWidth * 224.984 / 1026;
+    ctx.drawImage(brandLogo, w * .055, h * .075 - logoHeight, logoWidth, logoHeight);
+  }
+  ctx.fillStyle = '#fcedf6';
   ctx.font = `${w * .011}px monospace`; ctx.textAlign = 'right'; ctx.fillText('A SHARED DAYDREAM', w * .95, h * .075); ctx.textAlign = 'left';
   if (latest?.demo && cameraLive) { ctx.fillStyle = '#fff4fb'; ctx.textAlign = 'right'; ctx.font = `${w * .01}px monospace`; ctx.fillText('DEMO / SYNTHETIC CROWD', w * .94, h * .93); }
   ctx.restore();

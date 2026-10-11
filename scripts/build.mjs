@@ -8,6 +8,7 @@ for (const file of ['operator.html', 'audience.html', 'engine.html', 'robot.html
 // The bundled Decart SDK resolves its frame metadata worker beside robot.js.
 await cp('node_modules/@decartai/sdk/dist/realtime/browser/frame-metadata-worker.js', 'dist/frame-metadata-worker.js');
 await cp('node_modules/@mediapipe/tasks-vision/wasm', 'dist/wasm', { recursive: true });
+await cp('assets/brand', 'dist/brand', { recursive: true });
 await cp('assets/models', 'dist/models', { recursive: true });
 await cp('assets/scenes', 'dist/scenes', { recursive: true, filter: source => !source.endsWith('provenance.json') });
 await cp('assets/model-manifest.json', 'dist/models/manifest.json');

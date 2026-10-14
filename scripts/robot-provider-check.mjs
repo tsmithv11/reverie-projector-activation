@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 
 const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
-const scenarios = ['missing-keys', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live'];
+const expectedModel = sceneId === 'cartoon' ? 'lucy-restyle-2' : 'lucy-2.5';
+const scenarios = ['missing-keys', 'fal-only', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live'];
 for (const scenario of scenarios) {
   const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/providers-${scenario}-${Date.now()}`) } });
   const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 30000);
@@ -14,23 +15,40 @@ for (const scenario of scenarios) {
     const windowFor = async name => {
       for (let i = 0; i < 100; i++) {
         const page = app.windows().find(p => !p.isClosed() && p.url().endsWith(`/${name}.html`));
-        if (page) { await page.waitForLoadState(); return page; }
+        if (page) { await page.waitForLoadState(); await page.waitForFunction(() => !!window.installation); return page; }
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       throw Error(`Missing ${name}`);
     };
     await app.context().routeWebSocket('**', ws => {
       assert(ws.url().startsWith('wss://api3.decart.ai/'), 'Only the direct provider may open a socket in these scenarios'); sockets++;
+      const params = new URL(ws.url()).searchParams;
+      assert.equal(params.get('model'), expectedModel);
+      assert.equal(params.get('self_anchor'), sceneId === 'robots' ? 'false' : null);
       ws.onClose(() => { closed = true; setTimeout(() => ws.close({ code: 1000 }), 750); });
       ws.onMessage(message => {
-        if (scenario === 'cancel-fallback' && JSON.parse(String(message)).type === 'prompt') ws.send(JSON.stringify({ type: 'error', error: 'Service unavailable' }));
+        const data = JSON.parse(String(message));
+        if (data.type === 'prompt') {
+          assert.match(data.prompt, sceneId === 'cartoon' ? /entire scene.*2D cartoon/ : /robot/);
+          assert.equal(data.enhance_prompt, false);
+          if (scenario === 'cancel-fallback') ws.send(JSON.stringify({ type: 'error', error: 'Service unavailable' }));
+        }
       });
+    });
+    await app.context().addInitScript(() => {
+      const captureStream = HTMLCanvasElement.prototype.captureStream;
+      HTMLCanvasElement.prototype.captureStream = function(...args) {
+        globalThis.testCaptureSize = [this.width, this.height];
+        return captureStream.apply(this, args);
+      };
     });
     await app.evaluate((_, { scenario }) => {
       globalThis.providerTokenCalls = [];
-      globalThis.fetch = async url => {
+      globalThis.providerTokenScopes = [];
+      globalThis.fetch = async (url, options) => {
         const provider = url.includes('decart.ai') ? 'decart' : 'fal';
         globalThis.providerTokenCalls.push(provider);
+        if (provider === 'decart') globalThis.providerTokenScopes.push(JSON.parse(options.body).allowedModels);
         if (['cancel-fallback', 'decart-timeout', 'decart-live'].includes(scenario) && provider === 'decart') return { ok: true, json: async () => ({ apiKey: 'test-temporary-decart-token' }) };
         return { ok: false, status: 401 };
       };
@@ -50,7 +68,7 @@ for (const scenario of scenarios) {
     };
     await waitState(state => state.camera.state === 'live' && state.outputAvailable);
     await operator.evaluate(async ({ scenario, sceneId }) => {
-      if (scenario !== 'missing-keys') await window.installation.saveKey('fake-decart-key', 'decart');
+      if (!['missing-keys', 'fal-only'].includes(scenario)) await window.installation.saveKey('fake-decart-key', 'decart');
       if (!['missing-keys', 'decart-only'].includes(scenario)) await window.installation.saveKey('fake-fal-key', 'fal');
       await window.installation.configure({ robotEnabled: true, duration: 60 });
       await window.installation.command('generate-robot', sceneId);
@@ -60,7 +78,8 @@ for (const scenario of scenarios) {
       await operator.evaluate(async sceneId => { const state = await window.installation.state(); await window.installation.configure({ scenes: state.settings.scenes.map(scene => ({ ...scene, enabled: scene.id === sceneId ? false : scene.enabled })) }); }, sceneId);
     } else if (scenario === 'decart-live') {
       const robot = await windowFor('robot');
-      await robot.waitForFunction(() => document.querySelector('video'));
+      await robot.waitForFunction(() => globalThis.testCaptureSize);
+      assert.deepEqual(await robot.evaluate(() => globalThis.testCaptureSize), [1280, sceneId === 'cartoon' ? 704 : 720]);
       // Synthetic output exercises the same main/audience frame acknowledgement
       // boundary while the actual Decart SDK is awaiting mocked signaling.
       await robot.evaluate(async () => {
@@ -75,15 +94,18 @@ for (const scenario of scenarios) {
       await waitState(state => state.cloud.ready);
       const live = await operator.evaluate(() => window.installation.state());
       assert.equal(live.cloud.provider, 'decart'); assert.equal(live.active, sceneId); assert.equal(live.cloud.count, 1);
+      assert.match(live.cloud.display, sceneId === 'cartoon' ? /Lucy Restyle 2/ : /Lucy 2\.5/);
       await operator.evaluate(() => window.installation.command('next'));
     }
     await waitState(state => !state.cloud.streaming && !state.cloud.closing);
     const state = await operator.evaluate(() => window.installation.state());
-    const expected = scenario === 'missing-keys' ? [] : ['both-auth-fail', 'decart-timeout'].includes(scenario) ? ['decart', 'fal'] : ['decart'];
+    const expected = ['missing-keys', 'fal-only'].includes(scenario) ? [] : ['decart'];
     assert.deepEqual(await app.evaluate(() => globalThis.providerTokenCalls), expected);
-    if (['decart-only', 'both-auth-fail', 'decart-timeout'].includes(scenario)) assert.equal(state.cloud.code, 'AUTH_REJECTED');
+    assert.deepEqual(await app.evaluate(() => globalThis.providerTokenScopes), expected.includes('decart') ? [[expectedModel]] : []);
+    if (['decart-only', 'both-auth-fail'].includes(scenario)) assert.equal(state.cloud.code, 'AUTH_REJECTED');
+    if (scenario === 'decart-timeout') assert.equal(state.cloud.code, 'TIMEOUT');
     assert.equal(state.cloud.count, expected.length); assert(!state.cloud.ready); assert.notEqual(state.active, sceneId);
-    assert.equal(state.cloud.providers.decart, scenario !== 'missing-keys');
+    assert.equal(state.cloud.providers.decart, !['missing-keys', 'fal-only'].includes(scenario));
     assert(!JSON.stringify(state).includes('fake-decart-key')); assert(!JSON.stringify(state).includes('fake-fal-key'));
     assert.equal(sockets, ['cancel-fallback', 'decart-timeout', 'decart-live'].includes(scenario) ? 1 : 0);
     if (sockets) assert(closed);

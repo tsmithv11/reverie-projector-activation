@@ -1,7 +1,7 @@
 import { decartModel, openDecartConnection } from './core/decart-connection.js';
 import { openLucySignaling } from './core/lucy-signaling.js';
 import { usableDimensions, usablePixels } from './core/robot-result.js';
-import { CARTOON_PROMPT } from './core/live-scenes.cjs';
+import { liveScene } from './core/live-scenes.cjs';
 // This isolated service sends current camera frames and publishes current Lucy
 // video frames. There is no snapshot, JPEG cache, or substitute robot drawing.
 const api = window.installation;
@@ -74,8 +74,10 @@ async function receive(message) {
 }
 try {
   job = await api.job(); if (!job || done) throw Error('No session');
+  if (job.provider !== 'decart') throw Error('These audience scenes require direct Decart');
   const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
-  const canvas = document.createElement('canvas'); canvas.width = job.provider === 'decart' ? decartModel.width : 1280; canvas.height = job.provider === 'decart' ? decartModel.height : 720;
+  const model = decartModel(job.sceneId);
+  const canvas = document.createElement('canvas'); canvas.width = model.width; canvas.height = model.height;
   const ctx = canvas.getContext('2d');
   const input = async () => {
     if (done || inputBusy) return; inputBusy = true;
@@ -98,10 +100,10 @@ try {
   api.stage('authenticating');
   const token = await api.token(); if (!token || done) throw Error('Authentication failed');
   api.stage('signaling');
-  const prompt = job.sceneId === 'cartoon' ? CARTOON_PROMPT : 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.';
+  const { prompt } = liveScene(job.sceneId);
   if (job.provider === 'decart') {
     api.stage('connecting-video');
-    connection = openDecartConnection({ token, stream, prompt, onRemoteStream: receiveStream, onError: fail, onStage: phase => api.stage(phase) });
+    connection = openDecartConnection({ token, stream, sceneId: job.sceneId, onRemoteStream: receiveStream, onError: fail, onStage: phase => api.stage(phase) });
   } else connection = openLucySignaling({ token,
     input: { prompt, enable_prompt_expansion: false },
     onResult: receive, onError: detail => fail('SIGNALING', detail),

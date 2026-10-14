@@ -32,7 +32,7 @@ for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 
     // boundary to exercise scheduling, frame replacement and connection cleanup.
     await app.evaluate(() => { globalThis.pendingRobotFetch = []; globalThis.fetch = () => new Promise(resolve => globalThis.pendingRobotFetch.push(resolve)); });
     await operator.evaluate(async ({ scenario, sceneId }) => {
-      await window.installation.saveKey('fake-test-key');
+      await window.installation.saveKey('fake-test-key', 'decart');
       const state = await window.installation.state();
       await window.installation.configure({ robotEnabled: true, duration: 10, quality: 'high',
         ...(scenario === 'auto-slot' ? { scenes: state.settings.scenes.map(scene => ({ ...scene, enabled: scene.id === 'heat' || scene.id === sceneId })) } : {}) });

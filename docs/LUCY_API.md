@@ -1,4 +1,18 @@
-# Lucy API verification — October 8, 2026
+# Lucy API verification — October 13, 2026
+
+## Current audience configuration
+
+Both live scenes now use direct Decart with the installed `@decartai/sdk` 0.2.5. Machine dreaming is pinned to `lucy-2.5` with a 1280×720 input. Life in cartoon is pinned to `lucy-restyle-2` with a 1280×704 input. Main mints a token restricted to the selected model, retaining the 120-second expiry and 100-second session backstop. Prompt enhancement remains disabled.
+
+Lucy 2.5 sends `queryParams: { self_anchor: "false" }` before the signaling socket opens. The [official generation-stability guidance](https://docs.platform.decart.ai/models/realtime/lucy-2.5#generation-stability) says to disable this for changing people or scenes. It is not a mutable prompt setting. [Restyle 2 realtime](https://docs.platform.decart.ai/models/realtime/video-restyling) does not document self-anchoring, so that model does not receive an invented parameter. The model dimensions come from the installed SDK.
+
+FAL is inactive for both audience scenes: its [Lucy 2.5 realtime schema](https://fal.ai/models/decart/lucy-2-5/realtime/api) does not expose self-anchoring control, and its [published Restyle API](https://fal.ai/models/decart/lucy-restyle/api) is for uploaded videos. No Restyle 2 realtime endpoint was verified there. Existing credentials and legacy transport modules remain stored, but cannot enable or back up these scenes. A Decart failure skips the scene and retains the normal 60-second recovery backoff.
+
+`npm run test:providers` exercises the actual SDK against mocked sockets for both models, checking the outgoing model and anchoring query parameters, token scope, capture dimensions, prompts, missing/invalid keys, timeout, cancellation, live frame handoff and cleanup. No paid provider request or real crowd rehearsal is part of this check.
+
+## Historical integration notes — October 8
+
+The following describes the earlier FAL fallback implementation, superseded by the direct-only audience configuration above. Its standalone transport checks are retained for reference and are not part of the current acceptance commands.
 
 ## Direct Decart, with FAL backup
 

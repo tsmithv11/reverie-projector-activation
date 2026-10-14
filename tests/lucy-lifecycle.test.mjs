@@ -10,7 +10,7 @@ const require = createRequire(mainURL), source = readFileSync(mainURL, 'utf8');
 
 // Exercise the actual main-process IPC, scheduler and cleanup under a virtual
 // clock. No provider, camera, credentials or Electron process is used here.
-async function installation(saved = {}, keys = { fal: 'fake-key' }) {
+async function installation(saved = {}, keys = { decart: 'fake-key' }) {
   let now = 1e9, seq = 0, timerId = 0;
   const windows = [], timers = new Map(), handlers = new Map(), files = new Map();
   const ipcMain = new EventEmitter();
@@ -176,15 +176,15 @@ test('provider failure never retries in the background while paused; explicit re
   assert(!app.state().cloud.streaming && !app.state().cloud.ready);
 });
 
-test('a backup resumes a paused live scene within its original playback limit', async () => {
+for (const sceneId of ['robots', 'cartoon']) test(`${sceneId} never falls back to FAL or enables with only a FAL key`, async () => {
+  const falOnly = await installation({}, { fal: 'fake-backup-key' });
+  falOnly.configure({ robotEnabled: true }); falOnly.command('select', sceneId); falOnly.step();
+  assert.equal(falOnly.state().cloud.count, 0); assert.equal(falOnly.state().cloud.state, 'missing-key');
   const app = await installation({}, { decart: 'fake-direct-key', fal: 'fake-backup-key' });
-  app.configure({ robotEnabled: true, duration: 10, scenes: app.state().settings.scenes.map(s => ({ ...s, enabled: s.id === 'cartoon' })) });
-  app.step(1000); app.command('pause');
+  app.configure({ robotEnabled: true, duration: 10 });
+  app.command('select', sceneId); app.step(); app.command('pause');
   assert.equal(app.state().cloud.provider, 'decart'); assert(app.state().cloud.ready);
-  app.step(6000);
-  app.fail('VIDEO_STALLED'); app.close(); app.step(1000);
-  assert.equal(app.state().cloud.provider, 'fal'); assert(app.state().cloud.ready);
-  assert.equal(app.state().active, 'cartoon'); assert(app.state().paused);
-  app.step(4000); assert(!app.state().cloud.streaming); assert(app.state().settings.robotEnabled);
-  app.step(180000); assert.equal(app.state().cloud.count, 2);
+  app.fail('VIDEO_STALLED'); app.close(); app.step(180000);
+  assert(!app.state().cloud.streaming); assert(!app.state().cloud.ready);
+  assert.equal(app.state().cloud.count, 1); assert(app.state().settings.robotEnabled);
 });

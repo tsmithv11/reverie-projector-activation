@@ -1,4 +1,4 @@
-const { isLiveScene } = require('./live-scenes.cjs');
+const { isLiveScene, liveScene } = require('./live-scenes.cjs');
 const FAILURES = {
   AUTH_REJECTED: 'The provider rejected the API key. Check the key and its permissions.',
   AUTH_NETWORK: 'Could not reach provider authentication. Check the internet connection.',
@@ -44,8 +44,8 @@ function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh,
   else if (settings.demo) reason = 'demo';
   else if (!reason && (camera !== 'live' || !frameFresh)) reason = 'camera';
   const reasons = {
-    disabled: 'Enable Lucy 2.5 to stream live robot and cartoon scenes.',
-    'missing-key': 'No Decart or FAL key found. Add a key at the path shown below.',
+    disabled: 'Enable Lucy to stream live robot and cartoon scenes.',
+    'missing-key': 'A Decart API key is required for these live scenes. Add it at the path shown below. FAL backup is disabled for this audience setup.',
     'scene-disabled': 'Enable Machine dreaming or Life in cartoon in the playlist.',
     demo: 'Rehearsal mode does not upload audience frames.',
     camera: 'A live camera frame is required.',
@@ -54,6 +54,6 @@ function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh,
   };
   const blocked = ['disabled', 'missing-key', 'scene-disabled', 'demo'].includes(reason);
   const message = blocked ? `${reasons[reason]}${cloud.code ? ` Last failure: ${cloud.message}` : ''}` : cloud.message || reasons[reason] || 'Waiting for the next scheduled appearance.';
-  return { ...cloud, state: blocked ? reason : cloud.state, message, ready, canGenerate: !reason, canRetry: !!cloud.code && !reason, blockReason: reasons[reason] || '', display: ready ? `Live · Lucy 2.5 / ${cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : cloud.state === 'connecting' ? 'Connecting · current scene continues' : 'Skipped · no live Lucy video' };
+  return { ...cloud, state: blocked ? reason : cloud.state, message, ready, canGenerate: !reason, canRetry: !!cloud.code && !reason, blockReason: reasons[reason] || '', display: ready ? `Live · ${liveScene(cloud.sceneId || 'robots').label} / ${cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : cloud.state === 'connecting' ? 'Connecting · current scene continues' : 'Skipped · no live Lucy video' };
 }
 module.exports = { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure };

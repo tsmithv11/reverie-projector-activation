@@ -1,9 +1,11 @@
 // https://docs.platform.decart.ai/api-reference/create-client-token
 const TOKEN_URL = 'https://api.decart.ai/v1/client/tokens';
-async function mintDecartToken(key, fetcher = fetch) {
+const { liveScene } = require('./live-scenes.cjs');
+async function mintDecartToken(key, fetcher = fetch, sceneId = 'robots') {
+  const { model } = liveScene(sceneId);
   const response = await fetcher(TOKEN_URL, {
     method: 'POST', headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expiresIn: 120, allowedModels: ['lucy-2.5'], constraints: { realtime: { maxSessionDuration: 100 } } }),
+    body: JSON.stringify({ expiresIn: 120, allowedModels: [model], constraints: { realtime: { maxSessionDuration: 100 } } }),
     signal: AbortSignal.timeout(7000)
   });
   if (!response.ok) throw Object.assign(Error('Decart authentication unavailable'), { code: ({ 401: 'AUTH_REJECTED', 403: 'AUTH_REJECTED', 402: 'DECART_CREDITS', 429: 'DECART_RATE_LIMIT' })[response.status] || 'DECART_SERVICE' });

@@ -1,6 +1,7 @@
 import { createDecartClient, models } from '@decartai/sdk';
+import { liveScene } from './live-scenes.cjs';
 
-export const decartModel = models.realtime('lucy-2.5');
+export const decartModel = sceneId => models.realtime(liveScene(sceneId).model);
 const quietLogger = Object.fromEntries(['debug', 'info', 'warn', 'error'].map(level => [level, () => {}]));
 
 // SDK 0.2.5 exposes disconnect only after connect resolves. Track transports
@@ -46,14 +47,18 @@ export function ownDecartTransports(scope, onError) {
   };
 }
 
-export function openDecartConnection({ token, stream, prompt, onRemoteStream, onError, onStage }) {
+export function openDecartConnection({ token, stream, sceneId, onRemoteStream, onError, onStage }) {
+  const scene = liveScene(sceneId), model = decartModel(sceneId);
   let realtime, stopped = false, connected = false;
   const transports = ownDecartTransports(globalThis, (code, detail) => { if (!stopped) onError(code, detail); });
   const client = createDecartClient({ apiKey: token, telemetry: false, logger: quietLogger });
   const close = () => { stopped = true; return transports.close(() => realtime?.disconnect()); };
   client.realtime.connect(stream, {
-    model: decartModel, mirror: false, retries: 0,
-    initialState: { prompt: { text: prompt, enhance: false } },
+    model, mirror: false, retries: 0,
+    // Lucy 2.5 otherwise anchors to earlier generated people. Restyle 2 does
+    // not expose this option. It must be set on connect, not in the prompt.
+    ...(sceneId === 'robots' ? { queryParams: { self_anchor: 'false' } } : {}),
+    initialState: { prompt: { text: scene.prompt, enhance: false } },
     onRemoteStream: remote => { if (!stopped) onRemoteStream(remote); else remote.getTracks().forEach(track => track.stop()); },
     onConnectionChange: state => {
       if (stopped) return;

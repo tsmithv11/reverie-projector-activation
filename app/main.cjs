@@ -43,7 +43,7 @@ try { logTail = fs.readFileSync(path.join(runtime, 'installation.log'), 'utf8').
 function log(code, detail = '') {
   // Only internal status codes and controlled text. Never log frames, tokens, SDP or provider error bodies.
   const line = `${new Date().toISOString()} ${code} ${String(detail).slice(0, 200)}`;
-  if (code === 'robot-skipped') console.warn(`[Lucy 2.5] ${detail}`);
+  if (code === 'robot-skipped') console.warn(`[Lucy] ${detail}`);
   logTail.push(line); if (logTail.length > 80) logTail.shift();
   try { const p = path.join(runtime, 'installation.log'); if (fs.existsSync(p) && fs.statSync(p).size > 1024 * 1024) { fs.renameSync(p, p + '.1'); } fs.appendFileSync(p, line + '\n', { mode: 0o600 }); } catch {}
 }
@@ -297,7 +297,7 @@ app.whenReady().then(() => {
     const job = robotJob;
     if (!gate.busy || robotClosing || !job || !keys[job.provider]) throw Error('Cloud request not authorized');
     // One short-lived token per attempt; neither permanent key crosses IPC.
-    if (!robotTokens.has(job)) robotTokens.set(job, (job.provider === 'decart' ? mintDecartToken : mintLucyToken)(keys[job.provider]));
+    if (!robotTokens.has(job)) robotTokens.set(job, job.provider === 'decart' ? mintDecartToken(keys.decart, fetch, job.sceneId) : mintLucyToken(keys.fal));
     try { const token = await robotTokens.get(job); return job === robotJob ? token : null; } catch (error) { if (job === robotJob) stopRobot(error.code || 'AUTH_NETWORK'); return null; }
   });
   ipcMain.on('robot-closed', (e, result) => { if (robotClosing && allowed(e, robotClosing.win) && result?.id === robotClosing.id) robotClosing.finish(result.noSocket === true ? 'not-opened' : result.acknowledged === true ? 'graceful' : 'forced'); });

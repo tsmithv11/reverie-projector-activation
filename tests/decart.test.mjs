@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, statSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { ownDecartTransports } from '../app/core/decart-connection.js';
+import { decartModel, ownDecartTransports } from '../app/core/decart-connection.js';
 const require = createRequire(import.meta.url);
 const { mintDecartToken, TOKEN_URL } = require('../app/core/decart-auth.cjs');
 const { readKeys, saveKey } = require('../app/core/credentials.cjs');
@@ -31,6 +31,19 @@ test('Decart auth reports bad keys, billing, limits, service and malformed respo
   for (const value of [null, {}, { apiKey: 'short' }, { apiKey: 42 }]) await assert.rejects(mintDecartToken('x', async () => ({ ok: true, json: async () => value })), { code: 'AUTH_RESPONSE' });
 });
 
+test('cartoon sessions scope credentials to Restyle 2 and use its native frame size', async () => {
+  let body;
+  await mintDecartToken('private-test-key', async (_, options) => {
+    body = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ apiKey: 'temporary-token' }) };
+  }, 'cartoon');
+  assert.deepEqual(body.allowedModels, ['lucy-restyle-2']);
+  const cartoon = decartModel('cartoon'), robots = decartModel('robots');
+  assert.equal(cartoon.name, 'lucy-restyle-2'); assert.equal(cartoon.width, 1280); assert.equal(cartoon.height, 704);
+  assert.equal(robots.name, 'lucy-2.5'); assert.equal(robots.width, 1280); assert.equal(robots.height, 720);
+  await assert.rejects(mintDecartToken('private-test-key', () => { throw Error('Must not authenticate an unknown scene'); }, 'unknown'), /Unknown live scene/);
+});
+
 test('saving either key preserves the other provider and unrelated env entries; clearing is independent', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'reverie-credentials-')), file = path.join(dir, '.env');
   try {
@@ -48,8 +61,8 @@ test('saving either key preserves the other provider and unrelated env entries; 
 });
 
 test('provider order uses configured keys only and never falls back on operator/local stop', () => {
-  assert.deepEqual(configuredProviders({ decart: 'd', fal: 'f' }), ['decart', 'fal']);
-  assert.deepEqual(configuredProviders({ fal: 'f' }), ['fal']);
+  assert.deepEqual(configuredProviders({ decart: 'd', fal: 'f' }), ['decart']);
+  assert.deepEqual(configuredProviders({ fal: 'f' }), []);
   assert.deepEqual(configuredProviders({ decart: 'd' }), ['decart']);
   assert.deepEqual(configuredProviders({}), []);
   const run = { providers: ['decart', 'fal'], index: 0 };

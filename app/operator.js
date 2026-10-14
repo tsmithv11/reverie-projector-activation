@@ -1,4 +1,4 @@
-import { isLiveScene } from './core/live-scenes.cjs';
+import { isLiveScene, liveScene } from './core/live-scenes.cjs';
 const api = window.installation, $ = id => document.getElementById(id);
 let state = await api.state(), signature = '', deviceSignature = '';
 const icons = { heat: '⌗', robots: '♙', monsters: '☁', lines: '⌖', garden: '✳', cartoon: '✎' };
@@ -38,7 +38,7 @@ function render(s) {
   $('health-note').textContent = s.rendering.failure || s.camera.message; $('camera-pill').textContent = s.camera.state === 'demo' ? 'SYNTHETIC CROWD' : `CAMERA ${s.camera.state.toUpperCase()}`;
   $('decart-key-status').textContent = s.cloud.providers.decart ? 'Key configured' : 'Not configured';
   $('key-status').textContent = s.cloud.providers.fal ? 'Key configured' : 'Not configured'; $('key-path').textContent = `Stored privately: ${s.keyPath}`;
-  $('cloud-note').textContent = `${s.cloud.message}${s.cloud.code ? ` [${s.cloud.code} · ${s.cloud.phase || 'image check'}]` : ''} ${s.cloud.blockReason && s.cloud.blockReason !== s.cloud.message ? s.cloud.blockReason : ''} · ${s.cloud.count} connection attempts this session. Enabled scenes reconnect only for their next slot or an explicit selection. Decart first; one FAL backup attempt if needed.`;
+  $('cloud-note').textContent = `${s.cloud.message}${s.cloud.code ? ` [${s.cloud.code} · ${s.cloud.phase || 'image check'}]` : ''} ${s.cloud.blockReason && s.cloud.blockReason !== s.cloud.message ? s.cloud.blockReason : ''} · ${s.cloud.count} connection attempts this session. Enabled scenes reconnect only for their next slot or an explicit selection. Direct Decart; FAL backup disabled for this audience setup.`;
   if (s.cloud.streaming || s.cloud.closing) $('live-scene').value = s.cloud.sceneId;
   for (const option of $('live-scene').options) option.disabled = !s.settings.scenes.some(scene => scene.id === option.value && scene.enabled);
   if (!$('live-scene').selectedOptions[0] || $('live-scene').selectedOptions[0].disabled) $('live-scene').value = [...$('live-scene').options].find(option => !option.disabled)?.value || 'robots';
@@ -50,7 +50,7 @@ function render(s) {
   for (const entry of s.settings.scenes.filter(scene => isLiveScene(scene.id))) {
     const card = document.querySelector(`.scene-card[data-id=${entry.id}]`);
     const current = s.cloud.sceneId === entry.id;
-    if (card) { card.querySelector('.scene-art').disabled = !entry.enabled || (!s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming); card.querySelector('.scene-number').textContent = current && s.cloud.ready ? 'LIVE · LUCY 2.5' : current && s.cloud.streaming ? 'CONNECTING LIVE VIDEO' : 'LUCY 2.5 · LIVE VIDEO'; }
+    if (card) { card.querySelector('.scene-art').disabled = !entry.enabled || (!s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming); const model = liveScene(entry.id).label.toUpperCase(); card.querySelector('.scene-number').textContent = current && s.cloud.ready ? `LIVE · ${model}` : current && s.cloud.streaming ? 'CONNECTING LIVE VIDEO' : `${model} · LIVE VIDEO`; }
   }
   $('log-lines').textContent = s.logs.join('\n');
   for (const card of document.querySelectorAll('.scene-card')) { card.classList.toggle('active', card.dataset.id === s.active); card.classList.toggle('disabled', !s.settings.scenes.find(x => x.id === card.dataset.id).enabled); }

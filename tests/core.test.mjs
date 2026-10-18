@@ -45,14 +45,43 @@ test('motion rejects global illumination shifts and reacts to crowded local moti
   const p = pixels(100); for (let i = 0; i < p.length; i += 16) p[i] = p[i + 1] = p[i + 2] = 240;
   const r = f.analyze(p); assert(r.amount > .02); assert(r.points.length <= 48); assert.equal(r.energy.length, 336);
 });
-test('butterflies require occupancy and tolerate brief motion before fading', () => {
+test('occupied stillness tolerates small changes and clears when detections disappear', () => {
   const f = new MotionField(), p = pixels(100), boxes = [{ x: .2, y: .2, w: .5, h: .6 }]; let r;
   for (let i = 0; i < 45; i++) r = f.analyze(p, boxes, .1);
   assert(r.calm.length > 0);
-  const flash = p.slice(); for (let i = 0; i < flash.length; i += 16) flash[i] = 0;
+  const flash = p.slice(); flash[(40 * 160 + 50) * 4] = 0;
   assert(f.analyze(flash, boxes, .1).calm.length > 0);
   for (let i = 0; i < 60; i++) r = f.analyze(p, [], .1);
   assert.equal(r.calm.length, 0);
+});
+test('scene stillness requires sustained quiet frames, without requiring occupancy', () => {
+  const f = new MotionField(), p = pixels(100);
+  assert.equal(f.analyze(p, [], .5).quiet, false);
+  for (let i = 0; i < 20; i++) assert.equal(f.analyze(p, [], .1).quiet, false);
+  let r; for (let i = 0; i < 10; i++) r = f.analyze(p, [], .1);
+  assert.equal(r.quiet, true); assert.equal(r.calm.length, 0);
+  const motion = p.slice();
+  for (let i = 0; i < motion.length; i += 8) motion[i] = motion[i + 1] = motion[i + 2] = 0;
+  assert.equal(f.analyze(motion, [], .1).quiet, false);
+});
+test('moving people cannot attract butterflies from quiet cells inside their boxes', () => {
+  const f = new MotionField(), p = pixels(100);
+  const boxes = [{ x: .1, y: .1, w: .35, h: .8 }, { x: .6, y: .1, w: .3, h: .8 }];
+  const changed = p.slice();
+  // Only part of the left person's region moves; its remaining cells stay quiet.
+  for (let y = 10; y < 80; y++) for (let x = 18; x < 34; x++) {
+    const i = (y * 160 + x) * 4; changed[i] = changed[i + 1] = changed[i + 2] = x % 2 ? 200 : 0;
+  }
+  let r; for (let i = 0; i < 40; i++) r = f.analyze(p, boxes, .1);
+  assert(r.calm.some(c => c.x < .5));
+  for (let i = 0; i < 60; i++) {
+    r = f.analyze(i % 2 ? p : changed, boxes, .1);
+    assert.equal(r.quiet, false);
+    assert(r.calm.every(c => c.x > .5), 'a moving region must lose its accumulated stillness');
+  }
+  assert(r.calm.length > 0, 'a still person remains eligible beside a moving person');
+  for (let i = 0; i < 40; i++) r = f.analyze(i % 2 ? p : changed, [boxes[0]], .1);
+  assert.equal(r.calm.length, 0, 'no stationary people means no occupied stillness');
 });
 test('scene exceptions clean up and cannot prevent subsequent scenes', () => {
   let disposed = 0, painted = 0; const errors = [];

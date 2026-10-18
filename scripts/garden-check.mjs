@@ -14,7 +14,7 @@ await build({ stdin: { contents: `
   window.fixtureStep = (seconds, mode = 'empty') => {
     const points = Array.from({length: 24}, (_, i) => ({x: .08 + i % 8 * .12, y: .1 + Math.floor(i / 8) * .21, strength: .7}));
     const calm = Array.from({length: 12}, (_, i) => ({x: .15 + i % 6 * .14, y: .3 + Math.floor(i / 6) * .3, strength: .8}));
-    const analysis = { motion: { points: mode === 'moving' ? points : [], calm: mode === 'still' ? calm : [] } };
+    const analysis = { motion: { points: mode === 'moving' ? points : [], calm: mode === 'still' ? calm : [], quiet: mode === 'quiet' } };
     for (let i = 0; i < Math.round(seconds * 30); i++) fixtureScene.update({ dt: 1/30, intensity: .8, quality: 2, analysis });
     fixtureRender();
   };
@@ -41,14 +41,14 @@ try {
     await window.installation.command('pause');
   });
   // Exercise the real IPC route before substituting deterministic movement.
-  await audience.waitForFunction(async () => (await window.installation.frame(-1))?.pixels?.byteLength > 0);
+  await audience.waitForFunction(async () => { const frame = await window.installation.frame(-1); return frame?.pixels?.byteLength > 0 && typeof frame.motion?.quiet === 'boolean'; });
   const packets = await audience.evaluate(async () => {
     const full = await window.installation.frame(-1);
     const compact = await window.installation.frame(-1, true);
     const restored = await window.installation.frame(-1);
     return { fullBytes: full.pixels.byteLength, compactBytes: JSON.stringify(compact).length,
       compactHasImage: !!(compact.pixels || compact.preview || compact.motion.edges || compact.motion.energy),
-      hasMotion: Array.isArray(compact.motion.points) && Array.isArray(compact.motion.calm), restoredBytes: restored.pixels.byteLength };
+      hasMotion: Array.isArray(compact.motion.points) && Array.isArray(compact.motion.calm) && typeof compact.motion.quiet === 'boolean', restoredBytes: restored.pixels.byteLength };
   });
   assert(packets.fullBytes > 0); assert(packets.compactBytes < packets.fullBytes / 10);
   assert.equal(packets.compactHasImage, false); assert(packets.hasMotion); assert(packets.restoredBytes > 0);
@@ -160,7 +160,13 @@ try {
   await fixture.screenshot({ path: 'test-results/garden-bloom.png' });
   await fixture.evaluate(() => fixtureStep(6, 'still'));
   await fixture.screenshot({ path: 'test-results/garden-butterflies.png' });
-  assert(await fixture.evaluate(() => fixtureScene.butterflies.every(b => b.alpha > .9)));
+  assert(await fixture.evaluate(() => fixtureScene.butterflies.filter(b => b.alpha > .9).length >= 5));
+  await fixture.evaluate(() => {
+    window.firstButterfly = { ...fixtureScene.butterflies[0] };
+    fixtureStep(2, 'still');
+  });
+  assert(await fixture.evaluate(() => fixtureScene.butterflies[0].y < firstButterfly.y - .05));
+  await fixture.screenshot({ path: 'test-results/garden-butterflies-rising.png' });
   // Two different solid camera frames must produce pixel-identical scene output.
   assert(await fixture.evaluate(() => {
     const c = document.querySelector('canvas'), ctx = c.getContext('2d'), frame = document.createElement('canvas'); frame.width = 64; frame.height = 36;
@@ -175,6 +181,13 @@ try {
   assert.equal(await fixture.evaluate(() => fixtureScene.plants.length), 0);
   assert(await fixture.evaluate(() => fixtureScene.butterflies.every(b => b.alpha < .001)));
   await fixture.screenshot({ path: 'test-results/garden-settled.png' });
+  await fixture.evaluate(() => fixtureStep(6, 'quiet'));
+  assert(await fixture.evaluate(() => fixtureScene.butterflies.filter(b => b.alpha > .9).length >= 5));
+  // Restore the atlas after the fallback check to verify quiet-scene butterflies visually.
+  await fixture.evaluate(() => { fixtureScene.atlas.src = 'scenes/garden/botanical-atlas.png'; });
+  await fixture.waitForFunction(() => fixtureScene.atlas.naturalWidth > 0);
+  await fixture.evaluate(() => fixtureRender());
+  await fixture.screenshot({ path: 'test-results/garden-quiet-butterflies.png' });
   await fixture.evaluate(() => fixtureScene.cleanup());
   assert.deepEqual(errors, []);
   const result = { assets, packets, high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, otherScene: otherScene.rendering, sceneFailure: sceneFailure.rendering, cameraDraws: await audience.evaluate(() => window.gardenCameraDraws), cameraUploads: await audience.evaluate(() => window.gardenCameraUploads), errors };

@@ -17,10 +17,10 @@ export default class Garden extends Scene {
   }
 
   activate() {
-    this.plants = []; this.spawn = 0; this.elapsed = 0; this.motionHold = 0; this.activity = 0;
+    this.plants = []; this.spawn = 0; this.butterflySpawn = 0; this.elapsed = 0; this.motionHold = 0; this.activity = 0;
     this.butterflies = Array.from({ length: 12 }, (_, i) => ({
       x: .12 + i * .068, y: .75, alpha: 0, phase: i * 2.39996,
-      scale: .026 + (i % 4) * .004, type: i % 3, angle: 0
+      scale: .026 + (i % 4) * .004, type: i % 3, angle: 0, age: 0, life: 0
     }));
   }
 
@@ -51,19 +51,29 @@ export default class Garden extends Scene {
     for (const p of this.plants) p.age += dt;
     this.plants = this.plants.filter(p => p.age < p.life).slice(-cap);
 
-    this.butterflies.forEach((b, i) => {
-      const p = calm.length && intensity > 0 ? calm[(i * 7) % calm.length] : null;
-      const targetAlpha = p ? .7 + intensity * .3 : 0;
-      b.alpha += (targetAlpha - b.alpha) * (1 - Math.exp(-dt * (p ? .65 : 1.4)));
-      const t = this.elapsed, phase = b.phase;
-      if (p) {
-        const tx = clamp(.08 + p.x * .84 + Math.sin(t * .34 + phase) * .12, .055, .945);
-        const ty = clamp(.19 + p.y * .42 + Math.cos(t * .43 + phase) * .085, .17, .77);
-        b.x += (tx - b.x) * (1 - Math.exp(-dt * .7));
-        b.y += (ty - b.y) * (1 - Math.exp(-dt * .7));
-        b.angle = Math.sin(t * .43 + phase) * .45;
-      } else if (b.alpha > .002) { b.y -= dt * .025; b.x += Math.sin(phase + t) * dt * .018; }
-    });
+    // Once born, every butterfly finishes its own flight, independent of sensing.
+    for (const b of this.butterflies) {
+      if (!b.life) continue;
+      b.age += dt;
+      if (b.age >= b.life) { b.life = 0; b.alpha = 0; continue; }
+      b.alpha = b.peakAlpha * ease(b.age / 1.2) * ease((b.life - b.age) / 3);
+      b.x = b.originX + (Math.sin(b.age * .6 + b.phase) - Math.sin(b.phase)) * .045 + Math.sin(b.phase) * b.age * .006;
+      b.y = b.originY - b.age * (.027 + b.type * .004);
+      b.angle = Math.sin(b.age * .65 + b.phase) * .45;
+    }
+    const canSpawn = intensity > 0 && (calm.length > 0 || (analysis?.motion?.quiet === true && !points.length));
+    this.butterflySpawn = canSpawn ? Math.min(1, this.butterflySpawn + dt * (.9 + intensity * .9)) : 0;
+    if (this.butterflySpawn >= 1) {
+      const i = this.butterflies.findIndex(b => !b.life);
+      if (i >= 0) {
+        const b = this.butterflies[i];
+        const p = calm.length ? calm[(i * 7) % calm.length] : { x: .1 + i * .073, y: .65 + (i % 3) * .08 };
+        b.originX = b.x = clamp(.08 + p.x * .84 + Math.sin(b.phase) * .06, .08, .92);
+        b.originY = b.y = clamp(.19 + p.y * .42 + Math.cos(b.phase) * .06, .22, .77);
+        b.age = 0; b.life = 10 + (i % 5) * 1.5; b.alpha = 0; b.peakAlpha = .7 + intensity * .3;
+        this.butterflySpawn = 0;
+      }
+    }
     const active = this.plants.length > 0 || this.butterflies.some(b => b.alpha > .05);
     this.activity += ((active ? 1 : 0) - this.activity) * (1 - Math.exp(-dt * .7));
   }
@@ -119,7 +129,7 @@ export default class Garden extends Scene {
 
   }
 
-  deactivate() { this.plants = []; this.butterflies = []; this.spawn = 0; this.motionHold = 0; }
+  deactivate() { this.plants = []; this.butterflies = []; this.spawn = 0; this.butterflySpawn = 0; this.motionHold = 0; }
   cleanup() {
     this.deactivate(); this.artwork?.cleanup(); this.artwork = null;
     if (this.atlas) this.atlas.removeAttribute('src');

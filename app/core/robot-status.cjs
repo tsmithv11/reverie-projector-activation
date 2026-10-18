@@ -12,7 +12,7 @@ const FAILURES = {
   SIGNALING: 'Video signaling failed. Check service availability and the network.',
   SIGNALING_BLOCKED: 'The app security policy blocked video signaling. Update the installation build.',
   PEER_CONNECTION: 'The Lucy video connection failed. Check firewall, VPN, and WebRTC access.',
-  VIDEO_STALLED: 'Lucy stopped returning live video for two seconds. Check the service and network.',
+  VIDEO_STALLED: 'Lucy stopped returning usable live video for two seconds. Check the service and network.',
   CAMERA_LOST: 'The live camera stopped sending frames. Reconnect the camera.',
   DISPLAY_LOST: 'The audience display closed or restarted; the paid stream was stopped.',
   NO_VIDEO: 'Lucy did not return usable video before the connection deadline.',

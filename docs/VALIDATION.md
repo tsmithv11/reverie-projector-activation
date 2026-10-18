@@ -2,6 +2,12 @@
 
 This is a runnable first build, not a completed venue acceptance test. Four local scenes, the generated robot scene, controls and recovery paths are implemented. The current Lucy adapter continuously streams camera and returned video. Earlier static-image checks below are historical and do not establish realtime behavior; see the latest verification section.
 
+## Transient Lucy frame recovery — October 18, 2026
+
+The local installation log recorded `INVALID_IMAGE` exits about 2.6 and 28.8 seconds after robot playback began, followed by a full 30-second run. The worker previously terminated a live connection on its first rejected frame. It now skips transient black, flat and invalid-dimension frames and resumes on the same connection when usable frames return. Rejected frames do not refresh the last good output or extend setup/playback deadlines. Two seconds without usable output still stops the stream.
+
+All 83 unit/regression tests passed. Eight new tests exercise the actual worker with controlled decoded-frame callbacks: mixed transient failures, 100 repeated recoveries, sustained black/flat/invalid dimensions, missing callbacks, startup recovery, one publish in flight and stopping during recovery. Source and rebuilt Mac app scene-exit checks passed with synthetic camera frames, zero provider requests and no renderer errors. These desktop checks cover frame handoff and cleanup; decoded-frame rejection is covered by the worker regression tests. The packaged worker and status module match the verified build, and private configuration/test data are excluded. No new real Decart session was run; upstream service reliability and real-camera output quality remain unverified by this change.
+
 ## Hardware and environment
 
 - MacBook Pro (Mac17,9), Apple M5 Pro, 15 CPU cores / 16 GPU cores, 48 GB RAM.

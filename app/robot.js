@@ -6,7 +6,7 @@ import { liveScene } from './core/live-scenes.cjs';
 // video frames. There is no snapshot, JPEG cache, or substitute robot drawing.
 const api = window.installation;
 let connection, peer, stream, remote, done = false, offered = false, pendingICE = [], grace, inputTimer, watchdog;
-let job, closing, inputSeq = -1, outputSeq = 0, inputBusy = false, lastInput = Date.now(), lastOutput = 0;
+let job, closing, inputSeq = -1, outputSeq = 0, inputBusy = false, lastInput = Date.now(), lastOutput = 0, rejectedOutput = 0;
 function close() {
   if (closing) return closing;
   done = true; clearTimeout(grace); clearInterval(inputTimer); clearInterval(watchdog);
@@ -40,6 +40,14 @@ async function receiveStream(incoming) {
   const output = document.createElement('canvas'); output.width = 960; output.height = 540;
   const ctx = output.getContext('2d', { willReadFrequently: true });
   let publishDeadline = 0;
+  const skipOutput = () => {
+    // A decoder glitch must not end an otherwise healthy paid connection.
+    // Keep the last good frame's original timestamp: rejected frames cannot
+    // extend freshness, setup or playback deadlines.
+    rejectedOutput++;
+    if (lastOutput && Date.now() - lastOutput >= 2000) fail('INVALID_IMAGE');
+    else video.requestVideoFrameCallback(publish);
+  };
   const publish = async now => {
     if (done) return;
     // A decoded-frame callback, not a timer: a frozen remote stream cannot
@@ -47,13 +55,13 @@ async function receiveStream(incoming) {
     if (now + .8 < publishDeadline) { video.requestVideoFrameCallback(publish); return; }
     publishDeadline = (publishDeadline || now) + 1000 / 24;
     if (publishDeadline < now) publishDeadline = now + 1000 / 24;
-    if (!usableDimensions(video.videoWidth, video.videoHeight)) { fail('INVALID_IMAGE'); return; }
+    if (!usableDimensions(video.videoWidth, video.videoHeight)) { skipOutput(); return; }
     ctx.fillStyle = '#271431'; ctx.fillRect(0, 0, 960, 540);
     const scale = Math.min(960 / video.videoWidth, 540 / video.videoHeight);
     ctx.drawImage(video, (960 - video.videoWidth * scale) / 2, (540 - video.videoHeight * scale) / 2, video.videoWidth * scale, video.videoHeight * scale);
     const pixels = ctx.getImageData(0, 0, 960, 540).data;
-    if (!usablePixels(pixels)) { if (lastOutput) fail('INVALID_IMAGE'); else video.requestVideoFrameCallback(publish); return; }
-    lastOutput = Date.now();
+    if (!usablePixels(pixels)) { skipOutput(); return; }
+    lastOutput = Date.now(); rejectedOutput = 0;
     try {
       // Awaiting the acknowledgement bounds IPC to one frame in flight.
       await api.publish({ sessionId: job.id, seq: ++outputSeq, width: 960, height: 540, pixels });
@@ -95,7 +103,7 @@ try {
   inputTimer = setInterval(() => input().catch(() => fail('CAMERA_LOST')), 33);
   watchdog = setInterval(() => {
     if (Date.now() - lastInput > 2000) fail('CAMERA_LOST');
-    else if (lastOutput && Date.now() - lastOutput > 2000) fail('VIDEO_STALLED');
+    else if (lastOutput && Date.now() - lastOutput >= 2000) fail(rejectedOutput ? 'INVALID_IMAGE' : 'VIDEO_STALLED');
   }, 250);
   api.stage('authenticating');
   const token = await api.token(); if (!token || done) throw Error('Authentication failed');

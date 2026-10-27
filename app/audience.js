@@ -1,6 +1,7 @@
 import { registry } from './scenes/index.js';
 import { SceneHost } from './core/scene-host.js';
 import { AdaptiveQuality } from './core/performance.js';
+import { outputSize, fitCameraAnalysis } from './core/display.js';
 import { camera } from './scenes/base.js';
 import { isLiveScene } from './core/live-scenes.cjs';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
@@ -21,6 +22,7 @@ function receiveState(s) {
   // Refetch even the current packet when changing between analysis and video.
   if (isArtworkScene(state.active) !== isArtworkScene(s.active)) { seq = -1; latest = null; }
   state = s;
+  canvas.style.objectFit = s.settings.displayFormat === 'fill' ? 'fill' : 'contain';
   if (s.cloud.sessionId !== robotSession) { robotSession = s.cloud.sessionId; robotLatest = null; robotSeq = -1; }
 }
 api.onState(receiveState);
@@ -119,11 +121,14 @@ function tick(now) {
   if (deadline < now) deadline = now + 1000 / 30;
   const dt = Math.min(.1, (now - (last || now)) / 1000); last = now;
   pull(); pullRobot();
-  const quality = adaptive.level, w = [1280, 1600, 1920][quality], h = w * 9 / 16;
-  if (canvas.width !== w) { canvas.width = w; canvas.height = h; previous.width = w; previous.height = h; crossfadeAt = -10000; }
+  const quality = adaptive.level;
+  const { width: w, height: h } = outputSize(state.settings.displayFormat, quality, innerWidth * devicePixelRatio, innerHeight * devicePixelRatio);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; previous.width = w; previous.height = h; crossfadeAt = -10000; }
   const live = latest && Date.now() - latest.at < 2000;
   const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready && state.cloud.sceneId === state.active;
-  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && !isArtworkScene(state.active) ? source : null, analysis: live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } }, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
+  let analysis = live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } };
+  if (live && !isArtworkScene(state.active)) analysis = fitCameraAnalysis(analysis, latest.width, latest.height, w, h);
+  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && !isArtworkScene(state.active) ? source : null, analysis, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
   if (host.id !== state.active || activation !== state.activation) {
     if (!isArtworkScene(state.active)) artworkCanvas.width = artworkCanvas.height = 1;
     // Enter artwork without carrying the previous camera image into the scene.
@@ -141,7 +146,7 @@ function tick(now) {
   const transition = (now - crossfadeAt) / 1400;
   if (transition < 1) { const fade = Math.max(0, Math.min(1, transition)); ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade); ctx.drawImage(previous, 0, 0, w, h); ctx.globalAlpha = 1; }
   frames++;
-  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, sceneWidth: artworkOnly ? artworkCanvas.width : w, sceneHeight: artworkOnly ? artworkCanvas.height : h, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
+  if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, outputWidth: w, outputHeight: h, sceneWidth: artworkOnly ? artworkCanvas.width : w, sceneHeight: artworkOnly ? artworkCanvas.height : h, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key.toLowerCase() === 'o') api.command('controls');

@@ -1,13 +1,13 @@
 # Reverie Installation
 
-A desktop audience installation for an Apple Silicon MacBook and a 1080p projector. It has a separate operator console, six rotating worlds, offline local vision, and optional Lucy 2.5 robot conversion and Lucy Restyle 2 cartoon conversion through Decart. The appearance follows the four supplied references: angled pink/lavender portals, technical overlays, white robots, friendly monsters, and electric blue contours.
+A desktop audience installation for an Apple Silicon MacBook and a 4:3 or 16:9 projector. It has a separate operator console, six rotating worlds, offline local vision, and optional Lucy 2.5 robot conversion and Lucy Restyle 2 cartoon conversion through Decart. The appearance follows the four supplied references: angled pink/lavender portals, technical overlays, white robots, friendly monsters, and electric blue contours.
 
 ## Run the Mac application
 
 The locally built app is in `release/mac-arm64/Reverie Installation.app`; a verified ZIP is in `release/Reverie-Installation-mac-arm64.zip`. Open the app in Finder. No Node installation or internet is needed to run the packaged local scenes. This development build is **unsigned and not notarized**; distribute a signed build before deploying to managed or unfamiliar Macs. Do not disable Gatekeeper globally.
 
-1. Connect the USB webcam and projector. In macOS Displays, use **extended display**, not mirroring. Set the projector to 1920 × 1080, ideally 60 Hz. Enable **Displays have separate Spaces** in Desktop & Dock if native full-screen output blanks the other display.
-2. Open the app. Allow camera access. Select the USB camera and output in the operator window.
+1. Connect the USB webcam and projector. In macOS Displays, use **extended display**, not mirroring. Set the projector to its native resolution, such as 1392 × 1044 (4:3) or 1920 × 1080 (16:9), ideally 60 Hz. Enable **Displays have separate Spaces** in Desktop & Dock if native full-screen output blanks the other display.
+2. Open the app. Allow camera access. Select the USB camera and output in the operator window. Under **Camera & display → Display format**, choose **4:3 · 1392 × 1044**, **16:9 · widescreen**, or **Fill screen**. The fixed formats fit within the output with borders when needed; Fill screen adapts to the current window or full-screen display. Camera video is center-cropped to preserve proportions and keep tracking overlays aligned. The choice saves automatically. **High** quality renders 4:3 at exactly 1392 × 1044; Automatic may lower resolution for smoother playback.
 3. The audience window opens full screen on an external display. Without one, it opens as a window on the primary display. **Open audience display** brings it back after it has been hidden.
 4. Leave quality on **Automatic** initially. Default rotation is 60 seconds per scene; choose any whole-second duration from 10–60.
 5. Use **Synthetic crowd for rehearsal** to try every local effect without camera access or cloud uploads.
@@ -91,6 +91,7 @@ npm test               # scheduler, motion, cloud gate, lifecycle and accelerate
 npm run test:wonderful # pose animation, direction, camera loss, performance and visual snapshots
 npm run test:wonderful -- --record # also save a synthetic animated preview
 npm run test:garden    # growth, stillness, camera invisibility, quality and visual snapshots
+npm run test:display   # 4:3, 16:9, fill, live resizing, overlays and saved format
 npm run test:providers # exact models, token scopes, self-anchor flag, no FAL fallback, cleanup
 npm run test:cartoon   # Restyle 2 routing, live frame handoff and time limits
 npm run test:robots    # Lucy 2.5 routing, live frame handoff and connection limits

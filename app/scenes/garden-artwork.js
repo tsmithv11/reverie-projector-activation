@@ -110,7 +110,7 @@ export class GardenArtwork {
   }
 
   render(ctx, w, h, time) {
-    if (!this.backdrop || this.backdrop.width !== w) this.background(w, h);
+    if (!this.backdrop || this.backdrop.width !== w || this.backdrop.height !== h) this.background(w, h);
     ctx.drawImage(this.backdrop, 0, 0);
     ctx.save(); ctx.globalCompositeOperation = 'screen';
     for (let i = 0; i < 3; i++) {

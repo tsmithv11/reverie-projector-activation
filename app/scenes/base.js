@@ -1,3 +1,5 @@
+import { coverRect } from '../core/display.js';
+
 export const PALETTE = { pink: '#ffa0d0', lavender: '#E7D2F6', purple: '#271431', blue: '#4d65ff', orange: '#FF734A', cyan: '#64e8f3', leaf: '#b8d8ae' };
 export class Scene {
   initialize() {}
@@ -9,7 +11,10 @@ export class Scene {
 }
 export function camera(ctx, frame, w, h, opacity = 1, filter = 'none') {
   ctx.save(); ctx.globalAlpha = opacity; ctx.filter = filter;
-  if (frame) ctx.drawImage(frame, 0, 0, w, h);
+  if (frame) {
+    const rect = coverRect(frame.width, frame.height, w, h);
+    ctx.drawImage(frame, rect.x, rect.y, rect.width, rect.height);
+  }
   ctx.restore();
 }
 export function boxes(ctx, data, w, h, color = '#70eaff', labels = true) {

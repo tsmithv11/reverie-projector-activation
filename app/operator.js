@@ -23,7 +23,7 @@ function render(s) {
   state = s; sceneList(s);
   const ds = JSON.stringify([s.camera.devices, s.displays]);
   if (ds !== deviceSignature) { deviceSignature = ds; $('camera').replaceChildren(); option($('camera'), '', 'Default camera'); for (const d of s.camera.devices || []) option($('camera'), d.id, d.label); if (s.settings.cameraId && !(s.camera.devices || []).some(d => d.id === s.settings.cameraId)) option($('camera'), s.settings.cameraId, 'Selected camera · disconnected'); $('display').replaceChildren(); option($('display'), '', 'Auto · first external display'); for (const d of s.displays) option($('display'), d.id, `${d.label} · ${d.width} × ${d.height}${d.primary ? ' · primary' : ''}`); }
-  for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality']]) if (document.activeElement !== $(id)) $(id).value = s.settings[key];
+  for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['display-format','displayFormat'],['quality','quality']]) if (document.activeElement !== $(id)) $(id).value = s.settings[key];
   for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).checked = s.settings[key];
   if (document.activeElement !== $('intensity')) $('intensity').value = Math.round(s.settings.intensity * 100);
   $('intensity-value').textContent = `${Math.round(s.settings.intensity * 100)}%`;
@@ -34,7 +34,7 @@ function render(s) {
   $('remaining').textContent = Math.ceil(s.remaining / 1000); $('progress').style.width = `${100 - s.remaining / (s.settings.duration * 10)}%`;
   $('pause').textContent = s.paused ? '▶  Resume rotation' : 'Ⅱ  Pause rotation'; $('rotation-label').textContent = s.paused ? 'Rotation paused' : 'Automatic rotation';
   $('fps').textContent = s.rendering.fps || '—'; $('camera-health').textContent = s.camera.state; $('detector-health').textContent = s.camera.detector === 'ready' ? `${s.camera.boxes} · ${s.camera.detectorMs} ms` : s.camera.detector;
-  $('quality-health').textContent = ['720p · reduced','900p · balanced','1080p · high'][s.rendering.quality || 0]; $('cloud-health').textContent = s.cloud.ready ? 'Live' : s.cloud.state === 'connecting' ? `Connecting · ${s.cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : !s.settings.robotEnabled ? 'Off' : s.cloud.code ? 'Unavailable' : 'Enabled · idle';
+  $('quality-health').textContent = `${['Reduced','Balanced','High'][s.rendering.quality ?? 1]}${s.rendering.outputWidth ? ` · ${s.rendering.outputWidth} × ${s.rendering.outputHeight}` : ''}`; $('cloud-health').textContent = s.cloud.ready ? 'Live' : s.cloud.state === 'connecting' ? `Connecting · ${s.cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : !s.settings.robotEnabled ? 'Off' : s.cloud.code ? 'Unavailable' : 'Enabled · idle';
   $('health-note').textContent = s.rendering.failure || s.camera.message; $('camera-pill').textContent = s.camera.state === 'demo' ? 'SYNTHETIC CROWD' : `CAMERA ${s.camera.state.toUpperCase()}`;
   $('decart-key-status').textContent = s.cloud.providers.decart ? 'Key configured' : 'Not configured';
   $('key-status').textContent = s.cloud.providers.fal ? 'Key configured' : 'Not configured'; $('key-path').textContent = `Stored privately: ${s.keyPath}`;
@@ -58,7 +58,7 @@ function render(s) {
 api.onState(render); render(state);
 for (const [id, name] of [['generate-robot','generate-robot'],['output','output'],['pause','pause'],['next','next'],['fullscreen','fullscreen'],['reconnect','reconnect'],['logs','logs'],['quit','quit']]) $(id).onclick = () => api.command(name === 'generate-robot' ? (state.cloud.streaming || state.cloud.closing ? 'stop-robot' : state.cloud.canRetry ? 'retry-robot' : name) : name, name === 'generate-robot' ? $('live-scene').value : undefined);
 $('live-scene').onchange = () => { if (state.cloud.streaming && $('live-scene').value !== state.cloud.sceneId) api.command('select', $('live-scene').value); else render(state); };
-for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['quality','quality']]) $(id).onchange = () => configure({ [key]: $(id).value });
+for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['display-format','displayFormat'],['quality','quality']]) $(id).onchange = () => configure({ [key]: $(id).value });
 for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).onchange = () => configure({ [key]: $(id).checked });
 $('intensity').oninput = () => { $('intensity-value').textContent = `${$('intensity').value}%`; }; $('intensity').onchange = () => configure({ intensity: Number($('intensity').value) / 100 });
 for (const [button, input, provider] of [['save-key', 'fal-key', 'fal'], ['save-decart-key', 'decart-key', 'decart']]) $(button).onclick = async () => { try { await api.saveKey($(input).value, provider); $(input).value = ''; $('notice').textContent = 'API key saved privately.'; } catch { $('notice').textContent = 'Could not save key. Check its format and the file permissions.'; } };

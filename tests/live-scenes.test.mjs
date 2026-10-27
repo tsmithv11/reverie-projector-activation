@@ -10,7 +10,7 @@ const { LIVE_SCENE_IDS, nextPlaylistScene } = require('../app/core/live-scenes.c
 
 test('existing playlists gain cartoon without changing their order or toggles', () => {
   const old = ['garden', 'heat', 'robots', 'lines', 'monsters'].map(id => ({ id, enabled: id === 'garden' }));
-  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, { id: 'cartoon', enabled: true }]);
+  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, { id: 'cartoon', enabled: true }, { id: 'words', enabled: true }]);
 });
 
 test('playlist order includes enabled Lucy scenes without opening connections', () => {

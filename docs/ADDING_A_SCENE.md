@@ -2,7 +2,7 @@
 
 1. Add a module under `app/scenes/`. It receives the existing shared camera and analysis; it must not open another camera.
 2. Import its constructor and add it to `registry` in `app/scenes/index.js`.
-3. Add `{id,name,color}` to `SCENES` in `app/core/settings.cjs`. The scheduler, persisted-setting reconciliation, playlist and controls automatically include it. Optional: add a tile symbol in `app/operator.js`. Numeric keyboard shortcuts cover the first nine scenes (six currently registered).
+3. Add `{id,name,color}` to `SCENES` in `app/core/settings.cjs`. The scheduler, persisted-setting reconciliation, playlist and controls automatically include it. Optional: add a tile symbol in `app/operator.js`. Numeric keyboard shortcuts cover the first nine scenes (seven currently registered).
 4. Run `npm run build`, try transitions, camera loss, both quality extremes and cleanup, then package again. Do not change the scheduler or capture pipeline.
 
 Example `app/scenes/ripples.js`:

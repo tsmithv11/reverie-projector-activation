@@ -21,6 +21,58 @@ test('the six separated characters wait for sustained camera motion', () => {
   assert.equal(scene.activity, 0);
 });
 
+test('only the jumper starts underwater and stays hidden through canceled anticipation', () => {
+  const scene = create(), jumper = scene.creatures.find(c => c.spec.id === 'jumper');
+  assert.deepEqual(scene.creatures.filter(c => !c.pose().visible).map(c => c.spec.id), ['jumper']);
+  step(scene, 20); step(scene, 1, movement(.95));
+  assert.equal(jumper.pose().visible, false, 'distant motion cannot reveal the jumper');
+  scene.sprites = { jumper: { draw() { assert.fail('hidden creatures must not draw a body or reflection'); } } };
+  scene.drawCreature({}, jumper, 960, 540); // No drawing, including the waterline ring.
+  step(scene, .5, movement(.4));
+  assert(jumper.action); assert.equal(jumper.pose().visible, false);
+  step(scene, 2);
+  assert.equal(jumper.action, null); assert.equal(jumper.pose().visible, false);
+  step(scene, 1.3, movement(.4));
+  assert(jumper.pose().visible); assert(jumper.pose().y < jumper.spec.y - .1);
+});
+
+test('the surfaced jumper rests where it landed and repeats jumps with nearby motion', () => {
+  const scene = create(), jumper = scene.creatures.find(c => c.spec.id === 'jumper');
+  step(scene, 1.3, movement(.44)); step(scene, 1);
+  assert.equal(jumper.completed, 1); assert.equal(jumper.action, null);
+  const landed = jumper.pose();
+  assert(landed.visible); assert.equal(landed.depth, 0); assert.equal(landed.y, jumper.spec.y);
+  step(scene, 2);
+  assert.deepEqual(jumper.pose(), landed, 'the surface pause must hold its landing position');
+  step(scene, 1.3, movement(.44));
+  assert(jumper.action); assert(jumper.pose().visible); assert(jumper.pose().lift > .6);
+  assert.equal(jumper.pose().depth, 0, 'repeat jumps start above water');
+  step(scene, 12, movement(.44));
+  assert(jumper.completed >= 4); assert.equal(jumper.diveAge, null); assert(jumper.pose().visible);
+});
+
+test('quiet makes the jumper dive fully away before motion can bring it back', () => {
+  const scene = create(), jumper = scene.creatures.find(c => c.spec.id === 'jumper');
+  step(scene, 1.3, movement(.44));
+  for (let i = 0; i < 120 && jumper.action; i++) step(scene, 1 / 60);
+  assert.equal(jumper.completed, 1);
+  step(scene, 3.8);
+  assert.equal(jumper.diveAge, null); assert(jumper.pose().visible);
+  // Motion elsewhere should not keep this creature above water.
+  step(scene, .4, movement(.95));
+  assert(jumper.diveAge !== null);
+  const start = jumper.pose();
+  step(scene, .4, movement(.44));
+  assert(jumper.diveAge !== null); assert(jumper.pose().depth > start.depth);
+  assert(jumper.pose().y > start.y); assert.equal(jumper.x, start.x);
+  for (let i = 0; i < 120 && jumper.diveAge !== null; i++) step(scene, 1 / 60, movement(.44));
+  assert.equal(jumper.pose().visible, false); assert.equal(jumper.x, jumper.spec.x);
+  step(scene, 1.1, movement(.44));
+  assert(jumper.pose().visible); assert(jumper.pose().lift > .5);
+  scene.activate();
+  assert.equal(scene.creatures.find(c => c.spec.id === 'jumper').pose().visible, false);
+});
+
 test('loading artwork cannot consume the resting entrance before creatures appear', () => {
   const scene = create(), start = scene.creatures.map(c => c.pose());
   scene.background = { naturalWidth: 0 }; scene.sprites = {};

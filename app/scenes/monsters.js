@@ -62,8 +62,8 @@ export default class Monsters extends Scene {
       const event = creature.update(dt, { moving: moving && localStrength > .035,
         focus: localWeight ? localX / localWeight : creature.x, strength: localStrength, intensity });
       if (event && creature.spec.action !== 'wave') {
-        this.addRipple(creature.x, creature.spec.y, event === 'land' ? .045 : .026);
-        if (event === 'land' && ['bound', 'skip', 'leap'].includes(creature.spec.action)) {
+        this.addRipple(creature.x, creature.spec.y, ['land', 'dive'].includes(event) ? .045 : .026);
+        if (['land', 'emerge', 'dive'].includes(event) && ['bound', 'skip', 'leap'].includes(creature.spec.action)) {
           for (let i = 0; i < 7; i++) this.splashes.push({ x: creature.x, y: creature.spec.y, age: 0, vx: (i - 3) * .035, vy: -.14 - Math.random() * .10, r: .0015 + Math.random() * .002 });
         }
       }
@@ -132,6 +132,7 @@ export default class Monsters extends Scene {
   drawCreature(ctx, creature, w, h) {
     const sprite = this.sprites?.[creature.spec.id]; if (!sprite) return;
     const pose = creature.pose(), s = creature.spec, size = s.height * h;
+    if (!pose.visible) return;
     const waterline = s.y * h;
     // Keep the actual figure rigid. Animation comes from authored head, arm,
     // eye and leg poses, plus travel across the bay and arcs through the air.
@@ -141,10 +142,11 @@ export default class Monsters extends Scene {
     ctx.translate(pose.x * w, pose.y * h + size * .12 * (1 - pose.lift)); ctx.rotate(pose.angle);
     sprite.draw(ctx, pose.frame, size, pose.direction); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.rect(0, waterline, w, h - waterline); ctx.clip();
-    ctx.globalAlpha = .10 * (1 - pose.lift * .8);
+    ctx.globalAlpha = .10 * (1 - pose.lift * .8) * (1 - pose.depth);
     ctx.translate(pose.x * w, waterline); ctx.scale(1, -.22);
     sprite.draw(ctx, pose.frame, size, pose.direction); ctx.restore();
     ctx.save(); ctx.strokeStyle = '#ffe6f0a0'; ctx.lineWidth = Math.max(.65, w * .0007);
+    ctx.globalAlpha = 1 - pose.depth;
     ctx.beginPath(); ctx.ellipse(pose.x * w, waterline, size * .36, h * .005, 0, .1, Math.PI - .1); ctx.stroke();
     if (creature.action && s.action === 'paddle') {
       ctx.globalAlpha = .45; ctx.beginPath();

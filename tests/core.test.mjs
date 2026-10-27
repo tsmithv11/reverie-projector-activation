@@ -4,11 +4,11 @@ import { createRequire } from 'node:module';
 import { MotionField } from '../app/core/motion.js';
 import { SceneHost } from '../app/core/scene-host.js';
 import { AdaptiveQuality } from '../app/core/performance.js';
-const require = createRequire(import.meta.url), { Scheduler } = require('../app/core/scheduler.cjs'), { sanitize } = require('../app/core/settings.cjs'), { CloudGate } = require('../app/core/cloud-gate.cjs');
+const require = createRequire(import.meta.url), { Scheduler } = require('../app/core/scheduler.cjs'), { sanitize, SCENES } = require('../app/core/settings.cjs'), { CloudGate } = require('../app/core/cloud-gate.cjs');
 test('scheduler runs eight simulated hours, honors bounds and survives playlist edits', () => {
   const s = new Scheduler(sanitize({ duration: 10 }), 0); let changes = 0;
   for (let t = 0; t <= 8 * 3600000; t += 33) if (s.tick(t)) changes++;
-  assert(changes > 2800); assert.equal(s.enabled().length, 6);
+  assert(changes > 2800); assert.equal(s.enabled().length, SCENES.length);
   s.pause(8 * 3600000); const remaining = s.left(8 * 3600000); s.tick(9 * 3600000); assert.equal(s.left(9 * 3600000), remaining);
   s.resume(9 * 3600000); assert.equal(s.left(9 * 3600000), remaining);
   s.configure(sanitize({ scenes: [{ id: 'garden', enabled: true }, ...s.settings.scenes.filter(x => x.id !== 'garden').map(x => ({ ...x, enabled: false }))] }), 9 * 3600000);
@@ -16,7 +16,7 @@ test('scheduler runs eight simulated hours, honors bounds and survives playlist 
 });
 test('pause has a stable remaining time; manual selection and reorder are deterministic', () => {
   const s = new Scheduler(sanitize(), 0); s.pause(17000); assert.equal(s.left(999999), 43000); s.resume(100000); assert.equal(s.left(105000), 38000);
-  s.select('lines', 110000); assert.equal(s.left(110000), 60000); assert.equal(s.until('robots', 110000), 240000);
+  s.select('lines', 110000); assert.equal(s.left(110000), 60000); assert.equal(s.until('robots', 110000), 300000);
   s.configure(sanitize({ duration: 10 }), 110000); assert.equal(s.left(110000), 10000);
 });
 test('a one-scene playlist still reactivates on its next slot for a new activation', () => {
@@ -25,7 +25,7 @@ test('a one-scene playlist still reactivates on its next slot for a new activati
 });
 test('invalid settings cannot disable every scene or exceed operational limits', () => {
   const s = sanitize({ duration: 400, intensity: NaN, scenes: ['bad', { id: 'heat', enabled: false }, { id: 'heat', enabled: true }], robotMinutes: 0, robotSessionCap: 999 });
-  assert.equal(s.duration, 60); assert.equal(s.robotMinutes, undefined); assert.equal(s.robotSessionCap, undefined); assert(s.scenes.some(x => x.enabled)); assert.equal(new Set(s.scenes.map(x => x.id)).size, 6);
+  assert.equal(s.duration, 60); assert.equal(s.robotMinutes, undefined); assert.equal(s.robotSessionCap, undefined); assert(s.scenes.some(x => x.id === 'words' && x.enabled)); assert.equal(new Set(s.scenes.map(x => x.id)).size, SCENES.length);
 });
 test('Lucy remains enabled through repeated successful connections, ignoring old saved limits', () => {
   const settings = sanitize({ robotEnabled: true, robotMinutes: 60, robotSessionCap: 1 });

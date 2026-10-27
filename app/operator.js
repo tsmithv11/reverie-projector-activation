@@ -1,7 +1,7 @@
 import { isLiveScene, liveScene } from './core/live-scenes.cjs';
 const api = window.installation, $ = id => document.getElementById(id);
 let state = await api.state(), signature = '', deviceSignature = '';
-const icons = { heat: '⌗', robots: '♙', monsters: '☁', lines: '⌖', garden: '✳', cartoon: '✎' };
+const icons = { heat: '⌗', robots: '♙', monsters: '☁', lines: '⌖', garden: '✳', cartoon: '✎', words: 'Reverie 2026' };
 async function configure(patch) { try { state = await api.configure(patch); render(state); } catch { $('notice').textContent = 'Could not save settings. Check that the settings folder is writable.'; } }
 function sceneList(s) {
   const key = JSON.stringify(s.settings.scenes); if (key === signature) return; signature = key;

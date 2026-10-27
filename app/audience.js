@@ -92,13 +92,13 @@ function renderArtworkPortal(context) {
 function finishComposition(w, h, time, cameraLive) {
   // Every world shares the angled frame and pink/lavender surround.
   ctx.save();
-  const cameraScene = ['heat', 'lines'].includes(state.active) || isLiveScene(state.active);
+  const cameraScene = ['heat', 'lines', 'words'].includes(state.active) || isLiveScene(state.active);
   const wash = ctx.createLinearGradient(0, 0, w, h);
   wash.addColorStop(0, cameraScene ? '#ff8fcf99' : '#ffa0d055');
   wash.addColorStop(1, cameraScene ? '#627aeb99' : '#8272db44');
   ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); portalPath(w, h); ctx.fill('evenodd');
   ctx.strokeStyle = '#ffbadb70'; ctx.lineWidth = w * .018; ctx.beginPath(); portalPath(w, h); ctx.stroke();
-  if (state.active !== 'monsters' && state.active !== 'garden') {
+  if (state.active !== 'monsters' && state.active !== 'garden' && state.active !== 'words') {
     ctx.save(); ctx.beginPath(); portalPath(w, h); ctx.clip();
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
     ctx.restore();
@@ -107,8 +107,6 @@ function finishComposition(w, h, time, cameraLive) {
     const logoWidth = w * .145, logoHeight = logoWidth * 224.984 / 1026;
     ctx.drawImage(brandLogo, w * .055, h * .075 - logoHeight, logoWidth, logoHeight);
   }
-  ctx.fillStyle = '#fcedf6';
-  ctx.font = `${w * .011}px monospace`; ctx.textAlign = 'right'; ctx.fillText('A SHARED DAYDREAM', w * .95, h * .075); ctx.textAlign = 'left';
   if (latest?.demo && cameraLive) { ctx.fillStyle = '#fff4fb'; ctx.textAlign = 'right'; ctx.font = `${w * .01}px monospace`; ctx.fillText('DEMO / SYNTHETIC CROWD', w * .94, h * .93); }
   ctx.restore();
 }

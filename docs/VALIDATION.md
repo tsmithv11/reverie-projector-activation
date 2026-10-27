@@ -219,3 +219,13 @@ Bubbles now appear at the detected movement's horizontal and vertical location, 
 All 73 unit/regression tests pass, including delayed artwork, unchanged entrance poses, anticipation cancellation, separate moving groups, direction reversal, strength-scaled hops, landing timing and response at a full bubble budget. The final desktop rehearsal measured 30 fps at High, Balanced and Low, with no renderer errors. It confirmed three bubbles within 150 ms of synthetic motion, localized creature reactions, static idle artwork, and clean settling after camera loss. Results are in `test-results/wonderful-check.json`; the refreshed recording is `test-results/wonderful-motion-preview.mp4`. The Mac app and ZIP were rebuilt; the final packaged launch also ran at 30 fps with visible bubbles and no renderer errors, and its bundled audience code matches the tested source (`test-results/wonderful-motion-packaged.json`).
 
 These checks use synthetic input on this Mac. Projector visibility and the physical camera-to-audience relationship still need a walk-by rehearsal at the venue.
+
+## Words in motion — October 27, 2026
+
+Added the seventh local scene: a crisp, repeating “Reverie 2026” field inside the existing angled camera portal. Nearby motion changes the letters through the shared Reverie blue, pink and lavender palette against deep purple. A 120 ms attack and 950 ms release smooth the response; a nonlinear strength mapping makes gentle walk-by motion visible. The surround keeps the live camera and the same pink/lavender tint as the other camera scenes. No camera image is composited into the text field.
+
+All 101 unit tests pass. The isolated desktop rehearsal (`npm run test:words`) measured 30 fps at 1920×1080 High, 1392×1044 High and 960×720 Low/Fill. It verified localized left/right color response, fading to idle, unchanged exterior pixels when only motion changes, updated exterior pixels when the camera changes, camera-independent interior pixels, camera loss/recovery, and leaving/re-entering the scene. No renderer errors occurred. Widescreen and 4:3 screenshots were visually inspected. Evidence is in `test-results/words-check.json` and `test-results/words-audience-*.png`.
+
+These measurements use synthetic camera/motion input on this Mac. Physical camera and projector walk-by rehearsal remains a venue check.
+
+The rebuilt Apple Silicon app also passed an isolated launch check: seven scene tiles, Words in motion active at 30 fps, no renderer failure, and no cloud requests. Packaged audience code, operator controls, styles and scene registration match the verified build. The refreshed `release/Reverie-Installation-mac-arm64.zip` passes its SHA-256 check.

@@ -39,6 +39,7 @@ The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement
 | Bubbles | 32 / 24 / 16; maximum lifetime 4.4 seconds; radius 1.3–2.7% of artwork width; immediate burst and up to 14/second at current motion points |
 | Bay ripples / splashes | 8 ripples fading within 1.4 seconds; 56 splash droplets fading within 0.65 seconds |
 | Garden | 112 / 80 / 48 plants; maximum lifetime 46 seconds; 12 butterflies; cached botanical artwork and foliage |
+| Words in motion | 48 local motion points drive a 96 / 80 / 64-column color field (at most 96 rows); two cached output-size canvases keep text crisp; 120 ms attack and 950 ms release; no camera-frame retention |
 | Transition | One old render snapshot, 1.4 seconds; no second active scene. Artwork entry uses an opaque scene-colored wash instead of the preceding camera scene. |
 | Cloud | One live connection; one input and one output frame; one IPC in flight per direction; no queue |
 | Logs | 80 in-memory entries; approximately 2 MiB on disk |

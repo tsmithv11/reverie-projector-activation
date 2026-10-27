@@ -133,14 +133,35 @@ try {
   assert(assets.gpu); assert.equal(Object.keys(assets.sprites).length, 6);
   assert(Object.values(assets.sprites).every(s => s.frames === 6));
   await fixture.evaluate(() => fixtureStep(3));
+  const hiddenPixels = await fixture.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 960; canvas.height = 540;
+    const ctx = canvas.getContext('2d');
+    fixtureScene.drawCreature(ctx, fixtureScene.creatures.find(c => c.spec.id === 'jumper'), 960, 540);
+    return ctx.getImageData(0, 0, 960, 540).data.some(value => value !== 0);
+  });
+  assert.equal(hiddenPixels, false, 'the hidden jumper must leave no body, reflection or waterline ring');
   await fixture.screenshot({ path: 'test-results/wonderful-idle.png' });
   await fixture.evaluate(() => fixtureStep(1.3, true, .4));
   await fixture.screenshot({ path: 'test-results/wonderful-jump.png' });
   const jumping = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
   assert(jumping.lift > .65);
+  await fixture.evaluate(() => fixtureStep(1));
+  const surfaced = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
+  assert(surfaced.visible && surfaced.depth === 0 && surfaced.lift === 0);
+  await fixture.screenshot({ path: 'test-results/wonderful-surfaced.png' });
+  await fixture.evaluate(() => fixtureStep(2));
+  assert.deepEqual(await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose()), surfaced);
+  await fixture.evaluate(() => fixtureStep(1.3, true, .4));
+  const repeatJump = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
+  assert(repeatJump.visible && repeatJump.lift > .6 && repeatJump.depth === 0);
+  await fixture.evaluate(() => { fixtureStep(1); fixtureStep(4.25); });
+  const diving = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
+  assert(diving.depth > 0 && diving.depth < 1 && diving.y > surfaced.y);
+  await fixture.screenshot({ path: 'test-results/wonderful-diving.png' });
   await fixture.evaluate(() => fixtureStep(15));
   assert.equal(await fixture.evaluate(() => fixtureScene.bubbles.length), 0);
   assert(await fixture.evaluate(() => fixtureScene.creatures.every(c => !c.action)));
+  assert.equal(await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose().visible), false);
   await fixture.screenshot({ path: 'test-results/wonderful-settled.png' });
   const response = await fixture.evaluate(() => {
     fixtureScene.activate(); fixtureStep(.15, true, .12);
@@ -224,7 +245,7 @@ try {
   await fixture.screenshot({path:'test-results/wonderful-gpu-fallback.png'});
   await fixture.evaluate(() => fixtureScene.cleanup());
   assert.deepEqual(errors, []);
-  const result = { assets, packets, animation, response, balanced: balanced.rendering, restored: restored.rendering, cameraDraws: await audience.evaluate(() => window.wonderfulCameraDraws), cameraUploads: await audience.evaluate(() => window.wonderfulCameraUploads), high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, jumping, errors };
+  const result = { assets, packets, animation, response, waterCycle: { hiddenPixels, surfaced, repeatJump, diving }, balanced: balanced.rendering, restored: restored.rendering, cameraDraws: await audience.evaluate(() => window.wonderfulCameraDraws), cameraUploads: await audience.evaluate(() => window.wonderfulCameraUploads), high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, jumping, errors };
   await writeFile('test-results/wonderful-check.json', JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 } finally {

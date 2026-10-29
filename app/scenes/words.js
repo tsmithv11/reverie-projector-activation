@@ -77,7 +77,7 @@ export default class Words extends Scene {
     this.mask.width = this.ink.width = w; this.mask.height = this.ink.height = h;
     // Rasterize the precise text only on resize. The moving color field is
     // composited through this crisp mask, so letters never wobble or overlap.
-    const ctx = this.maskCtx, fontSize = w / 68;
+    const ctx = this.maskCtx, fontSize = w / 110;
     ctx.font = `600 ${fontSize}px Arial, sans-serif`;
     ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffffff';
     const stepX = ctx.measureText(TEXT).width + fontSize * .78, stepY = fontSize * 1.48;

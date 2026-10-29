@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Electron's JavaScript engine uses just-in-time compilation. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Ad-hoc builds have no Team ID matching the Electron frameworks. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Camera capture is required under the hardened runtime. No audio capture. -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+  </dict>
+</plist>

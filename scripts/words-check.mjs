@@ -2,6 +2,7 @@ import { _electron as electron } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { portalGeometry } from '../app/core/composition.js';
 
 const profile = path.resolve(`test-results/words-profile-${Date.now()}`);
 await mkdir(profile, { recursive: true });
@@ -60,23 +61,28 @@ try {
     ipcMain.handle('frame', () => globalThis.wordsMode === 'lost' ? null : ({
       seq: seq++, at: Date.now(), width: frame.width, height: frame.height, demo: true,
       pixels: (globalThis.wordsMode === 'camera-change' ? alternate : pixels).buffer, boxes: [],
-      motion: { amount: .1, calm: [], points: globalThis.wordsMode === 'left' ? person(.28) :
-        globalThis.wordsMode === 'right' ? person(.72) :
+      motion: { amount: .1, calm: [], points: globalThis.wordsMode === 'left' ? person(.35) :
+        globalThis.wordsMode === 'right' ? person(.65) :
         globalThis.wordsMode === 'crowd' ? [...person(.24), ...person(.51, .8), ...person(.77, 1.1)] : [] }
     }));
   }, frame);
-  const inspect = () => audience.evaluate(() => {
+  const inspect = async () => {
+    const size = await audience.evaluate(() => { const c = document.querySelector('canvas'); return { w: c.width, h: c.height, viewportWidth: innerWidth, viewportHeight: innerHeight }; });
+    return audience.evaluate(corners => {
     const canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height, image = ctx.getImageData(0, 0, w, h).data;
     let left = 0, right = 0, interior = 0;
     for (let y = Math.floor(h * .2); y < h * .8; y += 2) for (let x = Math.floor(w * .14); x < w * .88; x += 2) {
+      // Inspect only the opening, leaving a two-pixel margin at its angled edges.
+      if (!corners.every((a, j) => { const b = corners[(j + 1) % corners.length]; return (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x) > 2 * Math.hypot(b.x - a.x, b.y - a.y); })) continue;
       const i = (y * w + x) * 4;
       if (image[i] > 150 && image[i + 2] > 155) { if (x < w / 2) left++; else right++; }
       interior = (interior + image[i] + image[i + 1] * 3 + image[i + 2] * 7) >>> 0;
     }
     const p = (Math.floor(h * .5) * w + Math.floor(w * .025)) * 4;
     return { left, right, interior, outside: Array.from(image.slice(p, p + 4)), width: w, height: h };
-  });
+    }, portalGeometry(size.w, size.h, 'words', size.viewportWidth, size.viewportHeight).inner);
+  };
   await wait(8000);
   const idle = await inspect(); assert.equal(idle.left + idle.right, 0);
   await app.evaluate(() => { globalThis.wordsMode = 'left'; });
@@ -108,9 +114,12 @@ try {
   assert.notDeepEqual(changed.outside, still.outside, 'the surround must show the current camera');
   assert.equal(changed.interior, still.interior, 'the camera image must not bleed into the text field');
   await app.evaluate(() => { globalThis.wordsMode = 'lost'; });
-  await wait(2600);
-  state = await operator.evaluate(() => window.installation.state());
-  assert(state.rendering.frameAge > 2000); assert.equal(state.rendering.failure, '');
+  for (let i = 0; i < 24; i++) {
+    state = await operator.evaluate(() => window.installation.state());
+    if (state.rendering.frameAge > 2000) break;
+    await wait(250);
+  }
+  assert(state.rendering.frameAge > 2000, `Camera-loss status: ${JSON.stringify(state.rendering)}`); assert.equal(state.rendering.failure, '');
   await app.evaluate(() => { globalThis.wordsMode = 'crowd'; });
   await wait(1600);
   assert((await inspect()).left > 200, 'motion must resume after camera recovery');

@@ -6,6 +6,7 @@ import { CAST, CreatureAnimation } from '../app/scenes/creature-animation.js';
 const still = { motion: { points: [], amount: 0 } };
 const movement = x => ({ motion: { points: [{ x, y: .5, strength: .5 }] } });
 const crowd = { motion: { points: CAST.map(s => ({ x: s.x + .04, y: .5, strength: .75 })) } };
+const jumperX = CAST.find(s => s.id === 'jumper').x;
 function step(scene, seconds, analysis = still, quality = 2, intensity = .7) {
   for (let i = 0; i < Math.round(seconds * 60); i++) scene.update({ dt: 1 / 60, analysis, quality, intensity });
 }
@@ -28,32 +29,32 @@ test('only the jumper starts underwater and stays hidden through canceled antici
   assert.equal(jumper.pose().visible, false, 'distant motion cannot reveal the jumper');
   scene.sprites = { jumper: { draw() { assert.fail('hidden creatures must not draw a body or reflection'); } } };
   scene.drawCreature({}, jumper, 960, 540); // No drawing, including the waterline ring.
-  step(scene, .5, movement(.4));
+  step(scene, .5, movement(jumperX));
   assert(jumper.action); assert.equal(jumper.pose().visible, false);
   step(scene, 2);
   assert.equal(jumper.action, null); assert.equal(jumper.pose().visible, false);
-  step(scene, 1.3, movement(.4));
+  step(scene, 1.3, movement(jumperX));
   assert(jumper.pose().visible); assert(jumper.pose().y < jumper.spec.y - .1);
 });
 
 test('the surfaced jumper rests where it landed and repeats jumps with nearby motion', () => {
   const scene = create(), jumper = scene.creatures.find(c => c.spec.id === 'jumper');
-  step(scene, 1.3, movement(.44)); step(scene, 1);
+  step(scene, 1.3, movement(jumperX + .04)); step(scene, 1);
   assert.equal(jumper.completed, 1); assert.equal(jumper.action, null);
   const landed = jumper.pose();
   assert(landed.visible); assert.equal(landed.depth, 0); assert.equal(landed.y, jumper.spec.y);
   step(scene, 2);
   assert.deepEqual(jumper.pose(), landed, 'the surface pause must hold its landing position');
-  step(scene, 1.3, movement(.44));
+  step(scene, 1.3, movement(jumperX + .04));
   assert(jumper.action); assert(jumper.pose().visible); assert(jumper.pose().lift > .6);
   assert.equal(jumper.pose().depth, 0, 'repeat jumps start above water');
-  step(scene, 12, movement(.44));
+  step(scene, 12, movement(jumperX + .04));
   assert(jumper.completed >= 4); assert.equal(jumper.diveAge, null); assert(jumper.pose().visible);
 });
 
 test('quiet makes the jumper dive fully away before motion can bring it back', () => {
   const scene = create(), jumper = scene.creatures.find(c => c.spec.id === 'jumper');
-  step(scene, 1.3, movement(.44));
+  step(scene, 1.3, movement(jumperX + .04));
   for (let i = 0; i < 120 && jumper.action; i++) step(scene, 1 / 60);
   assert.equal(jumper.completed, 1);
   step(scene, 3.8);
@@ -62,12 +63,12 @@ test('quiet makes the jumper dive fully away before motion can bring it back', (
   step(scene, .4, movement(.95));
   assert(jumper.diveAge !== null);
   const start = jumper.pose();
-  step(scene, .4, movement(.44));
+  step(scene, .4, movement(jumperX + .04));
   assert(jumper.diveAge !== null); assert(jumper.pose().depth > start.depth);
   assert(jumper.pose().y > start.y); assert.equal(jumper.x, start.x);
-  for (let i = 0; i < 120 && jumper.diveAge !== null; i++) step(scene, 1 / 60, movement(.44));
+  for (let i = 0; i < 120 && jumper.diveAge !== null; i++) step(scene, 1 / 60, movement(jumperX + .04));
   assert.equal(jumper.pose().visible, false); assert.equal(jumper.x, jumper.spec.x);
-  step(scene, 1.1, movement(.44));
+  step(scene, 1.1, movement(jumperX + .04));
   assert(jumper.pose().visible); assert(jumper.pose().lift > .5);
   scene.activate();
   assert.equal(scene.creatures.find(c => c.spec.id === 'jumper').pose().visible, false);
@@ -116,7 +117,7 @@ test('passing motion on opposite sides produces opposite travel and facing', () 
 });
 
 test('leaps clear the surface and settle at home after motion stops', () => {
-  const scene = create(); step(scene, 1.3, movement(.4));
+  const scene = create(); step(scene, 1.3, movement(jumperX));
   const jumper = scene.creatures.find(c => c.spec.id === 'jumper');
   assert(jumper.pose().y < jumper.spec.y - .1, 'a real flight arc clears the bay');
   const existing = new Set(scene.bubbles);
@@ -132,12 +133,12 @@ test('movement wakes nearby creatures and preserves separate moving groups', () 
   const scene = create(); step(scene, 1, movement(.05));
   assert(scene.creatures.find(c => c.spec.id === 'antenna').action);
   assert(scene.creatures.find(c => c.spec.id === 'tall').action);
-  for (const id of ['green', 'blue', 'pink', 'jumper']) assert(!scene.creatures.find(c => c.spec.id === id).action, id);
+  for (const id of ['green', 'blue', 'pink']) assert(!scene.creatures.find(c => c.spec.id === id).action, id);
   scene.activate();
   step(scene, 1, { motion: { points: [{ x: .05, y: .3, strength: .7 }, { x: .95, y: .3, strength: .7 }] } });
   assert(scene.creatures.find(c => c.spec.id === 'antenna').action);
   assert(scene.creatures.find(c => c.spec.id === 'blue').action);
-  assert(!scene.creatures.find(c => c.spec.id === 'jumper').action, 'no phantom activity at the average of two groups');
+  assert(!scene.creatures.find(c => c.spec.id === 'green').action, 'no phantom activity between two distant groups');
 });
 
 test('hops preserve the resting pose on activation and require motion through anticipation', () => {

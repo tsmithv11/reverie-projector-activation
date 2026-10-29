@@ -43,9 +43,15 @@ try {
   // Exercise the real IPC route before substituting deterministic movement.
   await audience.waitForFunction(async () => { const frame = await window.installation.frame(-1); return frame?.pixels?.byteLength > 0 && typeof frame.motion?.quiet === 'boolean'; });
   const packets = await audience.evaluate(async () => {
-    const full = await window.installation.frame(-1);
-    const compact = await window.installation.frame(-1, true);
-    const restored = await window.installation.frame(-1);
+    let full, compact, restored;
+    for (let i = 0; i < 100; i++) {
+      full = await window.installation.frame(-1);
+      compact = await window.installation.frame(-1, true);
+      restored = await window.installation.frame(-1);
+      if (full?.pixels && compact && restored?.pixels) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (!full?.pixels || !compact || !restored?.pixels) throw Error('Camera packets did not become fresh');
     return { fullBytes: full.pixels.byteLength, compactBytes: JSON.stringify(compact).length,
       compactHasImage: !!(compact.pixels || compact.preview || compact.motion.edges || compact.motion.energy),
       hasMotion: Array.isArray(compact.motion.points) && Array.isArray(compact.motion.calm) && typeof compact.motion.quiet === 'boolean', restoredBytes: restored.pixels.byteLength };
@@ -68,7 +74,10 @@ try {
   await wait(2000);
   await audience.evaluate(() => {
     window.gardenCameraDraws = 0; window.gardenCameraUploads = 0; window.inGarden = false;
-    window.installation.onState(s => { window.inGarden = s.active === 'garden'; });
+    window.installation.onState(s => {
+      if (s.active === 'garden' && (!window.inGarden || window.gardenActivation !== s.activation)) window.gardenEntry = performance.now();
+      window.inGarden = s.active === 'garden'; window.gardenActivation = s.activation;
+    });
     const put = CanvasRenderingContext2D.prototype.putImageData;
     CanvasRenderingContext2D.prototype.putImageData = function(...args) {
       if (window.inGarden) window.gardenCameraUploads++;
@@ -84,7 +93,11 @@ try {
       const isCamera = source?.containsCamera || (source?.width === 64 && source?.height === 36);
       if (isCamera) {
         this.canvas.containsCamera = true;
-        if (window.inGarden) window.gardenCameraDraws++;
+        // The outgoing frozen frame may fade away for the first 700 ms.
+        // Fresh camera draws and all later artwork draws remain forbidden.
+        const outgoing = source === document.querySelector('canvas') || source?.outgoingSnapshot;
+        if (source === document.querySelector('canvas')) this.canvas.outgoingSnapshot = true;
+        if (window.inGarden && !(outgoing && performance.now() - window.gardenEntry < 800)) window.gardenCameraDraws++;
       }
       return draw.call(this, source, ...args);
     };

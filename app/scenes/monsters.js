@@ -96,7 +96,7 @@ export default class Monsters extends Scene {
 
   addRipple(x, y, radius) { this.ripples.push({ x, y, radius, age: 0 }); this.ripples = this.ripples.slice(-8); }
 
-  render(ctx, { w, h }) {
+  render(ctx, { w, h, foregroundClip }) {
     if (this.assetError) throw Error('Small wonderful things character artwork could not load');
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     if (!this.background?.complete || !this.background.naturalWidth) {
@@ -104,15 +104,30 @@ export default class Monsters extends Scene {
     }
     if (this.artwork) this.artwork.render(ctx, w, h, this.animationTime, this.activity);
     else ctx.drawImage(this.background, 0, 0, w, h);
+    const landscapeWidth = w, landscapeHeight = h;
+    let foregroundX = 0, foregroundY = 0;
+    ctx.save();
+    if (foregroundClip) {
+      ctx.beginPath();
+      foregroundClip.forEach((p, i) => i ? ctx.lineTo(p.x * w, p.y * h) : ctx.moveTo(p.x * w, p.y * h));
+      ctx.closePath(); ctx.clip();
+      // Arrange the cast in an upright rectangle inside the opening. Its
+      // bounds change with the output format, but its axes never follow the rim.
+      foregroundX = Math.min(...foregroundClip.map(p => p.x)) * w;
+      foregroundY = Math.min(...foregroundClip.map(p => p.y)) * h;
+      w = Math.max(...foregroundClip.map(p => p.x)) * w - foregroundX;
+      h = Math.max(...foregroundClip.map(p => p.y)) * h - foregroundY;
+      ctx.translate(foregroundX, foregroundY);
+    }
     for (const creature of this.creatures) {
       this.drawCreature(ctx, creature, w, h);
       if (creature.spec.id === 'green') {
         // Restore the foreground rock over the green character: it can emerge
         // from behind the rock without dragging the rock along with its body.
-        ctx.save(); ctx.beginPath();
+        ctx.save(); ctx.translate(-foregroundX, -foregroundY); ctx.beginPath();
         const edge = [[.451,.697],[.459,.650],[.474,.590],[.483,.566],[.495,.523],[.514,.493],[.531,.503],[.553,.548],[.571,.596],[.592,.626],[.613,.697],[.613,.716],[.448,.716]];
-        edge.forEach(([x,y],i) => i ? ctx.lineTo(x*w,y*h) : ctx.moveTo(x*w,y*h));
-        ctx.closePath(); ctx.clip(); ctx.drawImage(this.background, 0, 0, w, h); ctx.restore();
+        edge.forEach(([x,y],i) => i ? ctx.lineTo(x*landscapeWidth,y*landscapeHeight) : ctx.moveTo(x*landscapeWidth,y*landscapeHeight));
+        ctx.closePath(); ctx.clip(); ctx.drawImage(this.background, 0, 0, landscapeWidth, landscapeHeight); ctx.restore();
       }
     }
     for (const r of this.ripples) {
@@ -127,6 +142,7 @@ export default class Monsters extends Scene {
     }
     ctx.restore();
     for (const bubble of this.bubbles) this.drawBubble(ctx, bubble, w, h);
+    ctx.restore();
   }
 
   drawCreature(ctx, creature, w, h) {

@@ -58,7 +58,7 @@ Raw evidence: `test-results/soak.json`, `test-results/soak-before-pacing-fix.jso
 - **Hardware:** no physical USB reconnect, camera permission-denial dialog, projector cable reconnect, actual projector, real dense crowd, older M-series MacBook, Intel MacBook or Linux hardware qualification. Those paths have code and selected simulated tests; they are not physically certified.
 - **Duration:** short real-time endurance runs plus accelerated logic tests do not prove multi-hour reliability. Run an eight-hour rehearsal on the venue hardware with the actual camera, projector, lighting and audience geometry.
 - **Artwork:** Small wonderful things uses locally bundled reference-matched raster art, subtle GPU breathing/water displacement and a separate animated pink creature. The garden uses original bundled botanical artwork, procedural foliage, local stem growth and butterfly wing animation. These local scenes do not use realtime generative video. The line effect is a local edge map, not 3D reconstruction.
-- **Distribution:** the macOS ARM64 bundle runs locally but is unsigned/not notarized and uses the default Electron app icon. Source supports Linux with setup/build commands; no Linux binary was tested or delivered.
+- **Distribution:** the macOS ARM64 bundle is ad-hoc signed, but not Developer ID signed or notarized, and uses the default Electron app icon. The receiving Mac may require per-app approval. Source supports Linux with setup/build commands; no Linux binary was tested or delivered.
 - **Supervision:** internal renderer/worker recovery does not restart a dead main process, crashed OS, disconnected power, or failed projector. An event deployment should arrange an external relaunch/supervision policy.
 
 Use [the event runbook](EVENT_RUNBOOK.md) for the physical acceptance pass. Do not enable a scene you have not checked on the actual installation.
@@ -229,3 +229,41 @@ All 101 unit tests pass. The isolated desktop rehearsal (`npm run test:words`) m
 These measurements use synthetic camera/motion input on this Mac. Physical camera and projector walk-by rehearsal remains a venue check.
 
 The rebuilt Apple Silicon app also passed an isolated launch check: seven scene tiles, Words in motion active at 30 fps, no renderer failure, and no cloud requests. Packaged audience code, operator controls, styles and scene registration match the verified build. The refreshed `release/Reverie-Installation-mac-arm64.zip` passes its SHA-256 check.
+
+## Reference frame and gradient transitions — 2026-10-28
+
+All seven scenes now use the four-sided pink frame traced from the supplied reference, with a distinct fixed rotation per scene. Uniform scaling preserves identical edge lengths across scene changes and keeps the frame within widescreen, 4:3, and portrait outputs. The 1.4-second transition fades the outgoing composition to a plain pink-to-blue gradient for the first 700 ms, then fades in the incoming composition.
+
+- All 101 unit/regression tests passed.
+- `test:composition` verified all seven scenes at both 4:3 and 16:9 using synthetic camera/live-video inputs. Pixel checks confirmed outgoing-only fades, an exact gradient at every midpoint, continuous rapid reselection, gradient startup, and a clean midpoint after resizing. Screenshots were visually reviewed.
+- `test:display`, `test:wonderful`, `test:garden`, and `test:words` passed. The character, garden, and text rehearsals measured 30 fps across their tested quality settings; camera loss/recovery and artwork camera isolation remained intact. The frame-specific pixel checks and outgoing-snapshot expectations were updated for the new composition. Startup packet and camera-loss status checks now wait for the required data rather than relying on a fixed timing assumption.
+- The Mac ARM64 app and ZIP were rebuilt. Packaged audience code, styles, operator markup, and composition source match the tested build; the ZIP integrity check passed. A separate launch of the packaged app rendered the animated bay at 30 fps without renderer errors. No live provider session was needed for these visual changes.
+
+## Upright Small wonderful things landscape — 2026-10-28
+
+The bay now fills the output upright and continues seamlessly across the angled frame. Only the creature, reflection, ripple, splash, and bubble layer is clipped to the opening. The cast is arranged within upright opening bounds so it remains visible at 4:3 and 16:9; the foreground rock stays aligned with the full-screen landscape. The outside receives the pink/blue wash over the empty bay.
+
+All 101 unit/regression tests passed. The composition rehearsal passed for all seven scenes in both formats, including the existing gradient transitions. The extended character rehearsal compared the outside pixels against the empty animated bay at 960×540 and 960×720, while idle and moving: all four samples had zero outside differences and visible characters inside, with no rotation applied to the character layer. High, Balanced, and Low playback measured 30 fps, with no camera uploads or unintended camera draws and no renderer errors. Screenshots were visually reviewed.
+
+## Jumper placement in open water — 2026-10-28
+
+Moved the slender pink jumper left and forward into open water, with a smaller horizontal travel range to keep its emergence, landings, reflections and ripples clear of the central rock. Existing interaction checks now target its new home position. All 101 unit/regression tests and the character rehearsal passed, including emergence, repeat jumps, landing, resting and diving; playback remained at 30 fps across quality levels with no renderer errors. Production-renderer screenshots of the jump and landing were visually checked in 4:3 and 16:9 (`test-results/jumper-*.png`).
+
+## Mac transfer packaging — 2026-10-29
+
+The previous `mac.identity: null` build failed strict signature verification with “code has no resources but signature indicates they must be present.” Packaging now applies an ad-hoc signature to the app and its helpers, keeps the hardened runtime enabled, and grants the JIT, library-validation exception, and camera entitlements required by this local build. `npm run dist:mac` explicitly targets Apple Silicon and writes `release/Reverie-Installation-mac-arm64.zip`.
+
+- Built using the installed Electron 44.5.1 distribution with `npm run dist:mac -- --config.electronDist=node_modules/electron/dist`, avoiding a network download in the restricted build environment.
+- Extracted the ZIP to a temporary directory outside the repository. Both the original bundle and extracted copy passed `codesign --verify --deep --strict`.
+- Launched the extracted packaged app with isolated settings, empty provider keys, and simulated camera input. Small wonderful things, the garden, and Words in motion each sampled 30 fps; the fake webcam reached `live`, the bundled detector reached `ready` and ran inference, and there were no renderer errors or cloud requests.
+- Checked bundled artwork, WASM, model weights, and current audience code. No `.env`, runtime, or test-result files were included. Refreshed the ZIP's SHA-256 sidecar. Evidence: `test-results/mac-transfer.json`.
+
+This verifies local extraction and launch, not Gatekeeper approval on the receiving M4 Pro. The build is not notarized and still needs the receiving Mac's per-app approval where prompted. Physical webcam and projector checks remain part of setup on that Mac.
+
+## Scene sizing to the screen margin — 2026-10-29
+
+Each scene now fits its own rotated bounds to the output instead of sharing the smallest scale needed by every rotation. The reference silhouette, pink rim and rotation angles are preserved. The minimum outside margin is one CSS inch (96 CSS pixels), converted to the canvas scale so quality changes and Retina density do not alter its displayed size. The opposite axis can retain additional space to avoid distorting the shape; very small previews cap the margin at one quarter of the short edge. Physical inches on a projected surface require that surface's dimensions.
+
+All 101 unit/regression tests passed. The existing composition rehearsal passed for all seven scenes at 4:3 and 16:9, with exact gradient midpoints, continuous rapid reselection, successful resizing and no renderer errors. Screenshots were visually checked. A separate geometry check passed 756 combinations of scenes, formats, quality levels, pixel densities and viewport sizes, confirming maximum fit, the expected screen margin and in-bounds corners.
+
+The display and text-scene rehearsals also passed, including format persistence, localized motion response, camera isolation and quality changes. The Mac app and transfer ZIP were rebuilt; the extracted app passed strict signature verification and its audience bundle matched the tested build. Small wonderful things, the garden and Words in motion each sampled 30 fps in the packaged launch, with no renderer errors or cloud requests. The ZIP checksum sidecar was refreshed.

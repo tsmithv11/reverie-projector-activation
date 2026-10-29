@@ -39,7 +39,7 @@ export default class Ripples extends Scene {
 }
 ```
 
-Register with `import Ripples from './ripples.js'` and `registry.ripples = Ripples`, plus `{ id: 'ripples', name: 'Ripples in the room', color: '#ffa0d0' }` in SCENES. The shared branding and transition are composed after your scene renders. All scenes use the portal frame; the garden and painted bay are fitted inside it with a pink/lavender surround. The garden uses a camera-free entry wash. Artwork-only scenes must also opt into camera-independent rendering and exclude camera fallbacks in `audience.js`.
+Register with `import Ripples from './ripples.js'` and `registry.ripples = Ripples`, plus `{ id: 'ripples', name: 'Ripples in the room', color: '#ffa0d0' }` in SCENES. The shared branding and transition are composed after your scene renders. All scenes use the reference trapezoid in `app/core/composition.js`; assign a distinct angle in `SCENE_ROTATIONS` for a new scene. The garden is fitted inside it with the shared pink-to-blue surround. The painted bay stays upright across the full output and receives an optional normalized `foregroundClip` polygon so only its characters and effects are confined to the opening. The outgoing scene fades completely to that gradient before the incoming scene appears. Artwork-only scenes must also opt into camera-independent rendering and exclude camera fallbacks in `audience.js`.
 
 Live Lucy effects also need an entry in `app/core/live-scenes.cjs` with an explicit model, display label and prompt. Their job carries a `sceneId` through token scoping and the direct Decart connection; only that scene becomes available after its video is decoded. They share credentials, spending limits, cooldown and one active connection.
 

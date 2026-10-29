@@ -8,10 +8,14 @@ await mkdir('test-results', { recursive: true });
 await writeFile('dist/wonderful-check.html', '<!doctype html><html><head><style>body{margin:0;background:#000}canvas{width:100vw;height:100vh;display:block}</style></head><body><canvas></canvas><script type="module" src="wonderful-check.js"></script></body></html>');
 await build({ stdin: { contents: `
   import Monsters from './app/scenes/monsters.js';
+  import { CAST } from './app/scenes/creature-animation.js';
+  window.fixtureJumperX = CAST.find(s => s.id === 'jumper').x;
+  import { portalGeometry } from './app/core/composition.js';
+  window.fixturePortal = portalGeometry;
   window.fixtureScene = new Monsters(); fixtureScene.initialize(); fixtureScene.activate();
   const canvas = document.querySelector('canvas'); canvas.width = 960; canvas.height = 540;
   window.fixtureRender = () => fixtureScene.render(canvas.getContext('2d'), { w: canvas.width, h: canvas.height });
-  window.fixtureStep = (seconds, moving = false, x = .4) => {
+  window.fixtureStep = (seconds, moving = false, x = window.fixtureJumperX) => {
     const analysis = { motion: { points: moving ? [{ x, y: .4, strength: .5 }] : [] } };
     for (let i = 0; i < Math.round(seconds * 60); i++) fixtureScene.update({ dt: 1/60, intensity: .7, quality: 2, analysis });
     fixtureRender();
@@ -54,7 +58,10 @@ try {
   assert(packets.compactBytes < packets.fullBytes / 10); assert.equal(packets.compactHasImage, false); assert(packets.hasMotion);
   await audience.evaluate(() => {
     window.wonderfulCameraUploads = 0; window.wonderfulCameraDraws = 0; window.inWonderful = false;
-    window.installation.onState(s => { window.inWonderful = s.active === 'monsters'; });
+    window.installation.onState(s => {
+      if (s.active === 'monsters' && (!window.inWonderful || window.wonderfulActivation !== s.activation)) window.wonderfulEntry = performance.now();
+      window.inWonderful = s.active === 'monsters'; window.wonderfulActivation = s.activation;
+    });
     const put = CanvasRenderingContext2D.prototype.putImageData;
     CanvasRenderingContext2D.prototype.putImageData = function(...args) {
       this.canvas.containsCamera = true;
@@ -70,7 +77,11 @@ try {
     CanvasRenderingContext2D.prototype.drawImage = function(source, ...args) {
       if (source?.containsCamera) {
         this.canvas.containsCamera = true;
-        if (window.inWonderful) window.wonderfulCameraDraws++;
+        // The outgoing frozen frame may fade away for the first 700 ms.
+        // Fresh camera draws and all later artwork draws remain forbidden.
+        const outgoing = source === document.querySelector('canvas') || source?.outgoingSnapshot;
+        if (source === document.querySelector('canvas')) this.canvas.outgoingSnapshot = true;
+        if (window.inWonderful && !(outgoing && performance.now() - window.wonderfulEntry < 800)) window.wonderfulCameraDraws++;
       }
       return draw.call(this, source, ...args);
     };
@@ -132,6 +143,47 @@ try {
   }));
   assert(assets.gpu); assert.equal(Object.keys(assets.sprites).length, 6);
   assert(Object.values(assets.sprites).every(s => s.frames === 6));
+  const composition = await fixture.evaluate(() => {
+    const samples = [];
+    for (const [w, h] of [[960, 540], [960, 720]]) {
+      const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      const corners = fixturePortal(w, h, 'monsters').inner;
+      const foregroundClip = corners.map(p => ({ x: p.x / w, y: p.y / h }));
+      for (const moving of [false, true]) {
+        fixtureScene.activate(); if (moving) fixtureStep(1.3, true, fixtureJumperX);
+        fixtureScene.artwork.render(ctx, w, h, fixtureScene.animationTime, fixtureScene.activity);
+        const empty = ctx.getImageData(0, 0, w, h).data;
+        const draw = fixtureScene.drawCreature, transforms = [];
+        fixtureScene.drawCreature = function(...args) { const t = args[0].getTransform(); transforms.push([t.b, t.c]); return draw.apply(this, args); };
+        try { fixtureScene.render(ctx, { w, h, foregroundClip }); } finally { fixtureScene.drawCreature = draw; }
+        const scene = ctx.getImageData(0, 0, w, h).data;
+        let outsideDifference = 0, insideDifference = 0;
+        for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+          const distances = corners.map((a, i) => {
+            const b = corners[(i + 1) % corners.length];
+            return ((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)) / Math.hypot(b.x - a.x, b.y - a.y);
+          });
+          const inside = distances.every(d => d > 2), outside = distances.some(d => d < -2);
+          const i = (y * w + x) * 4;
+          for (let channel = 0; channel < 3; channel++) {
+            const difference = Math.abs(scene[i + channel] - empty[i + channel]);
+            if (outside) outsideDifference += difference;
+            if (inside) insideDifference += difference;
+          }
+        }
+        samples.push({ w, h, moving, outsideDifference, insideDifference, upright: transforms.every(([b, c]) => b === 0 && c === 0) });
+      }
+    }
+    fixtureScene.activate();
+    return samples;
+  });
+  for (const sample of composition) {
+    assert.equal(sample.outsideDifference, 0, 'outside the frame must match the empty landscape, including during motion');
+    assert(sample.insideDifference > 10000, 'the frame must still contain visible creatures');
+    assert(sample.upright, 'the frame must not rotate the character layer');
+  }
   await fixture.evaluate(() => fixtureStep(3));
   const hiddenPixels = await fixture.evaluate(() => {
     const canvas = document.createElement('canvas'); canvas.width = 960; canvas.height = 540;
@@ -141,7 +193,7 @@ try {
   });
   assert.equal(hiddenPixels, false, 'the hidden jumper must leave no body, reflection or waterline ring');
   await fixture.screenshot({ path: 'test-results/wonderful-idle.png' });
-  await fixture.evaluate(() => fixtureStep(1.3, true, .4));
+  await fixture.evaluate(() => fixtureStep(1.3, true, fixtureJumperX));
   await fixture.screenshot({ path: 'test-results/wonderful-jump.png' });
   const jumping = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
   assert(jumping.lift > .65);
@@ -151,7 +203,7 @@ try {
   await fixture.screenshot({ path: 'test-results/wonderful-surfaced.png' });
   await fixture.evaluate(() => fixtureStep(2));
   assert.deepEqual(await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose()), surfaced);
-  await fixture.evaluate(() => fixtureStep(1.3, true, .4));
+  await fixture.evaluate(() => fixtureStep(1.3, true, fixtureJumperX));
   const repeatJump = await fixture.evaluate(() => fixtureScene.creatures.find(c => c.spec.id === 'jumper').pose());
   assert(repeatJump.visible && repeatJump.lift > .6 && repeatJump.depth === 0);
   await fixture.evaluate(() => { fixtureStep(1); fixtureStep(4.25); });
@@ -245,7 +297,7 @@ try {
   await fixture.screenshot({path:'test-results/wonderful-gpu-fallback.png'});
   await fixture.evaluate(() => fixtureScene.cleanup());
   assert.deepEqual(errors, []);
-  const result = { assets, packets, animation, response, waterCycle: { hiddenPixels, surfaced, repeatJump, diving }, balanced: balanced.rendering, restored: restored.rendering, cameraDraws: await audience.evaluate(() => window.wonderfulCameraDraws), cameraUploads: await audience.evaluate(() => window.wonderfulCameraUploads), high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, jumping, errors };
+  const result = { assets, packets, composition, animation, response, waterCycle: { hiddenPixels, surfaced, repeatJump, diving }, balanced: balanced.rendering, restored: restored.rendering, cameraDraws: await audience.evaluate(() => window.wonderfulCameraDraws), cameraUploads: await audience.evaluate(() => window.wonderfulCameraUploads), high: high.rendering, low: low.rendering, cameraLost: cameraLost.rendering, jumping, errors };
   await writeFile('test-results/wonderful-check.json', JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 } finally {

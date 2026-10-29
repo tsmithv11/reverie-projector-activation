@@ -32,7 +32,7 @@ The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement
 | Camera plane | 960×540 / 640×360 / 480×270 |
 | Local motion/edge plane | 384×216 / 256×144 / 160×90 |
 | Output canvas | 16:9: 1920×1080 / 1600×900 / 1280×720. 4:3: 1392×1044 / 1200×900 / 960×720. Fixed formats are contained on the display; Fill follows the viewport's physical pixels, capped by the 16:9 quality dimensions. |
-| Bay and garden artwork canvas | Half the output width and height; upscaled once inside the full-resolution portal; released when leaving artwork scenes |
+| Bay and garden artwork canvas | Half the output width and height; upscaled once beneath the full-resolution portal; the bay landscape fills the output upright with only its foreground clipped, while the garden fits the opening; released when leaving artwork scenes |
 | Detection | 24 boxes; COCO person only, score ≥0.34 |
 | Motion | 24×14 grid; 48 strongest motion points; 24 occupied still points |
 | Small wonderful things | Six independently animated sprite characters, six poses each; local horizontal motion response, bounded travel and cooldowns; 120 ms shared gate plus 180–360 ms local hold; grounded anticipation and one eased hop; water-only GPU pass |
@@ -60,7 +60,7 @@ Artwork scenes request a compact packet containing only `{seq, at, demo, boxes, 
 
 Context: `{w,h,time,dt,quality,intensity,frame,analysis,robotVideo,demo}`. `time` and `dt` are seconds; `dt` is clamped to 0.1; quality is 0/1/2. `frame` is a shared CanvasImageSource or null. `analysis` has `{boxes,motion}` with empty, safe defaults when unavailable. `robotVideo` is the canvas containing the latest decoded Lucy video frame for the active live scene, if any. Robot and cartoon reuse the same renderer, clipping this video inside the angled portal while retaining the normal camera view and pink-to-blue tint outside. Inputs are read-only by convention. Scene resources and simulations must tolerate changes in w/h and quality without allocating per-frame textures.
 
-Only the garden renders its artwork at half the output width and height, using 75% fewer artwork pixels while keeping the border and branding at normal output resolution. Plant counts and animation timing are unchanged. During this scene, `frame(seq, true)` returns `{seq,at,demo,boxes,motion:{points,calm,amount}}`; camera pixels, edges, energy grids and JPEG previews are omitted before IPC serialization, and the audience does not upload camera images. The engine still supplies normal local motion/person analysis and retains its full packet for other scenes and live scenes. Scene changes refetch the correct packet format and discard requests that finish after their format becomes obsolete.
+The garden and painted bay render their artwork at half the output width and height, using 75% fewer artwork pixels while keeping the border and branding at normal output resolution. Plant counts and animation timing are unchanged. During this scene, `frame(seq, true)` returns `{seq,at,demo,boxes,motion:{points,calm,amount}}`; camera pixels, edges, energy grids and JPEG previews are omitted before IPC serialization, and the audience does not upload camera images. The engine still supplies normal local motion/person analysis and retains its full packet for other scenes and live scenes. Scene changes refetch the correct packet format and discard requests that finish after their format becomes obsolete.
 
 ## Security and data lifecycle
 

@@ -4,6 +4,7 @@ import { AdaptiveQuality } from './core/performance.js';
 import { outputSize, fitCameraAnalysis } from './core/display.js';
 import { camera } from './scenes/base.js';
 import { isLiveScene } from './core/live-scenes.cjs';
+import { portalGeometry, polygonPath, artworkTransform, paintBackground, paintTransition } from './core/composition.js';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
 const brandLogo = new Image();
 brandLogo.src = 'brand/reverie-logo-white.svg';
@@ -15,7 +16,8 @@ const previous = document.createElement('canvas'), previousCtx = previous.getCon
 const artworkCanvas = document.createElement('canvas'), artworkCtx = artworkCanvas.getContext('2d', { alpha: false });
 artworkCanvas.width = artworkCanvas.height = 1;
 let state = await api.state(), latest = null, pulling = false, robotLatest = null, robotPulling = false, robotSeq = -1, robotSession = null, seq = -1;
-let last = 0, deadline = 0, frames = 0, lastReport = performance.now(), fps = 0, crossfadeAt = -10000, failure = '', activation = -1;
+let last = 0, deadline = 0, frames = 0, lastReport = performance.now(), fps = 0, transitionAt = -10000, failure = '', activation = -1;
+let portal, portalKey;
 const isArtworkScene = id => id === 'monsters' || id === 'garden';
 const adaptive = new AdaptiveQuality(), host = new SceneHost(registry, (id, phase) => { failure = `Scene ${id} failed during ${phase}; isolated fallback active`; });
 function receiveState(s) {
@@ -52,54 +54,50 @@ async function pull() {
     }
   } catch {} finally { pulling = false; }
 }
-function ambient(w, h, time) {
-  const gradient = ctx.createLinearGradient(0, 0, w, h); gradient.addColorStop(0, '#f6b5d5'); gradient.addColorStop(.5, '#c5a8dd'); gradient.addColorStop(1, '#6254ab'); ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
-  ctx.save(); ctx.translate(w / 2, h / 2); ctx.rotate(Math.sin(time * .07) * .1 - .15);
-  for (let i = 0; i < 5; i++) { ctx.strokeStyle = `rgba(255,225,244,${.1 + i * .035})`; ctx.lineWidth = w * .02; const s = w * (.2 + i * .12); ctx.strokeRect(-s / 2, -s / 2, s, s); }
-  ctx.restore();
-}
-function portalPath(w, h) {
-  ctx.moveTo(w * .06, h * .14); ctx.lineTo(w * .92, h * .045); ctx.lineTo(w * .97, h * .87); ctx.lineTo(w * .1, h * .98); ctx.closePath();
-}
 function renderCameraPortal(context) {
-  const { frame, w, h, time } = context;
+  const { frame, w, h } = context;
   if (frame) camera(ctx, frame, w, h);
-  else ambient(w, h, time);
+  else paintBackground(ctx, w, h);
   // Keep camera coordinates aligned across the opening and its tinted surround.
-  ctx.save(); ctx.beginPath(); portalPath(w, h); ctx.clip();
+  ctx.save(); ctx.beginPath(); polygonPath(ctx, portal.inner); ctx.clip();
   const rendered = host.render(ctx, context);
   ctx.restore(); return rendered;
 }
 function renderArtworkPortal(context) {
   const { w, h } = context;
-  const backdrop = ctx.createLinearGradient(0, 0, w, h);
-  backdrop.addColorStop(0, '#d799c5'); backdrop.addColorStop(.5, '#a996d1'); backdrop.addColorStop(1, '#7567a6');
-  ctx.fillStyle = backdrop; ctx.fillRect(0, 0, w, h);
-  ctx.save(); ctx.beginPath(); portalPath(w, h); ctx.clip();
-  // Fit the whole landscape into the angled opening, with 1% overscan at
-  // the right edge for the frame's slight departure from a parallelogram.
-  ctx.transform(.87, -h * .095 / w, w * .04 / h, .84, w * .06, h * .14);
+  const landscape = state.active === 'monsters';
+  paintBackground(ctx, w, h);
+  ctx.save();
+  if (!landscape) {
+    ctx.beginPath(); polygonPath(ctx, portal.inner); ctx.clip();
+    ctx.transform(...artworkTransform(portal, w, h));
+  }
   let rendered;
   if (isArtworkScene(state.active)) {
     // Quarter as many artwork pixels, then upscale once inside the crisp portal.
     const gw = w / 2, gh = h / 2;
     if (artworkCanvas.width !== gw || artworkCanvas.height !== gh) { artworkCanvas.width = gw; artworkCanvas.height = gh; }
-    rendered = host.render(artworkCtx, { ...context, w: gw, h: gh, frame: null });
+    // The bay stays upright and continuous across the frame. Only its creature
+    // and particle layer is clipped; the empty landscape fills the whole output.
+    const foregroundClip = landscape ? portal.inner.map(p => ({ x: p.x / w, y: p.y / h })) : undefined;
+    rendered = host.render(artworkCtx, { ...context, w: gw, h: gh, frame: null, foregroundClip });
     if (rendered) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; ctx.drawImage(artworkCanvas, 0, 0, w, h); }
   } else rendered = host.render(ctx, context);
   ctx.restore(); return rendered;
 }
-function finishComposition(w, h, time, cameraLive) {
-  // Every world shares the angled frame and pink/lavender surround.
+function finishComposition(w, h, cameraLive) {
+  // Every world shares the reference silhouette, with its own fixed rotation.
   ctx.save();
   const cameraScene = ['heat', 'lines', 'words'].includes(state.active) || isLiveScene(state.active);
   const wash = ctx.createLinearGradient(0, 0, w, h);
   wash.addColorStop(0, cameraScene ? '#ff8fcf99' : '#ffa0d055');
   wash.addColorStop(1, cameraScene ? '#627aeb99' : '#8272db44');
-  ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); portalPath(w, h); ctx.fill('evenodd');
-  ctx.strokeStyle = '#ffbadb70'; ctx.lineWidth = w * .018; ctx.beginPath(); portalPath(w, h); ctx.stroke();
+  if (cameraScene || state.active === 'monsters') { ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); polygonPath(ctx, portal.inner); ctx.fill('evenodd'); }
+  const border = ctx.createLinearGradient(0, 0, w, h);
+  border.addColorStop(0, '#ef8bc8'); border.addColorStop(1, '#ba79c2');
+  ctx.fillStyle = border; ctx.beginPath(); polygonPath(ctx, portal.outer); polygonPath(ctx, portal.inner); ctx.fill('evenodd');
   if (state.active !== 'monsters' && state.active !== 'garden' && state.active !== 'words') {
-    ctx.save(); ctx.beginPath(); portalPath(w, h); ctx.clip();
+    ctx.save(); ctx.beginPath(); polygonPath(ctx, portal.inner); ctx.clip();
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
     ctx.restore();
   }
@@ -121,7 +119,13 @@ function tick(now) {
   pull(); pullRobot();
   const quality = adaptive.level;
   const { width: w, height: h } = outputSize(state.settings.displayFormat, quality, innerWidth * devicePixelRatio, innerHeight * devicePixelRatio);
-  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; previous.width = w; previous.height = h; crossfadeAt = -10000; }
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w; canvas.height = h;
+    // A new opaque canvas starts black; seed it before any transition snapshot.
+    paintBackground(ctx, w, h);
+  }
+  const nextPortalKey = `${w}:${h}:${innerWidth}:${innerHeight}:${state.active}`;
+  if (portalKey !== nextPortalKey) { portal = portalGeometry(w, h, state.active, innerWidth, innerHeight); portalKey = nextPortalKey; }
   const live = latest && Date.now() - latest.at < 2000;
   const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready && state.cloud.sceneId === state.active;
   let analysis = live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } };
@@ -129,20 +133,17 @@ function tick(now) {
   const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && !isArtworkScene(state.active) ? source : null, analysis, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
   if (host.id !== state.active || activation !== state.activation) {
     if (!isArtworkScene(state.active)) artworkCanvas.width = artworkCanvas.height = 1;
-    // Enter artwork without carrying the previous camera image into the scene.
-    if (isArtworkScene(state.active)) { previousCtx.fillStyle = state.active === 'garden' ? '#0c101c' : '#b49bca'; previousCtx.fillRect(0, 0, w, h); }
-    else previousCtx.drawImage(canvas, 0, 0);
-    crossfadeAt = now; host.activate(state.active, context, activation !== state.activation); activation = state.activation;
+    previous.width = w; previous.height = h; previousCtx.drawImage(canvas, 0, 0);
+    transitionAt = now; host.activate(state.active, context, activation !== state.activation); activation = state.activation;
   }
   ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
   // Artwork scenes remain alive without camera packets. Only interaction needs them.
   const artworkOnly = isArtworkScene(state.active);
   const visible = !!state.active && (artworkOnly || (isLiveScene(state.active) ? robotLive : live));
-  if (!visible) ambient(w, h, context.time);
-  else if (!(artworkOnly ? renderArtworkPortal(context) : renderCameraPortal(context))) { ambient(w, h, context.time); if (!artworkOnly) camera(ctx, source, w, h, .5); }
-  finishComposition(w, h, context.time, live);
-  const transition = (now - crossfadeAt) / 1400;
-  if (transition < 1) { const fade = Math.max(0, Math.min(1, transition)); ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade); ctx.drawImage(previous, 0, 0, w, h); ctx.globalAlpha = 1; }
+  if (!visible) paintBackground(ctx, w, h);
+  else if (!(artworkOnly ? renderArtworkPortal(context) : renderCameraPortal(context))) { paintBackground(ctx, w, h); if (!artworkOnly) camera(ctx, source, w, h, .5); }
+  finishComposition(w, h, live);
+  paintTransition(ctx, previous, w, h, now - transitionAt);
   frames++;
   if (now - lastReport >= 1000) { fps = frames * 1000 / (now - lastReport); frames = 0; lastReport = now; adaptive.sample(fps, state.settings.quality); api.report({ fps: Math.round(fps * 10) / 10, quality: adaptive.level, scene: state.active, failure, outputWidth: w, outputHeight: h, sceneWidth: artworkOnly ? artworkCanvas.width : w, sceneHeight: artworkOnly ? artworkCanvas.height : h, robotSeq: robotLatest?.seq || 0, robotFrameAge: robotLatest ? Date.now() - robotLatest.at : null, frameAge: latest ? Date.now() - latest.at : null, particles: host.active?.bubbles?.length ?? host.active?.plants?.length ?? 0 }); }
 }

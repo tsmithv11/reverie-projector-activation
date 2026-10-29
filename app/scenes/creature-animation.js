@@ -9,7 +9,9 @@ export const CAST = [
   { id: 'blue', action: 'bound', x: .795, y: .737, height: .245, travel: .045, lift: .075, duration: 2.1, rest: .65, delay: .12 },
   { id: 'antenna', action: 'paddle', x: .105, y: .827, height: .26, travel: .055, lift: .008, duration: 2.5, rest: .3, delay: .04 },
   { id: 'pink', action: 'skip', x: .658, y: .825, height: .11, travel: .085, lift: .04, duration: 1.8, rest: .55, delay: .18 },
-  { id: 'jumper', action: 'leap', x: .40, y: .775, height: .205, travel: .065, lift: .16, duration: 1.7, rest: 1.6, delay: .1, diveAfter: 4, diveDuration: 1.1 }
+  // Surface in the open foreground water to the left of the rock. Keep the
+  // whole travel range here so landings, reflections and ripples stay in water.
+  { id: 'jumper', action: 'leap', x: .275, y: .885, height: .205, travel: .025, lift: .16, duration: 1.7, rest: 1.6, delay: .1, diveAfter: 4, diveDuration: 1.1 }
 ];
 
 export class CreatureAnimation {

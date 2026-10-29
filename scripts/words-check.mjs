@@ -67,7 +67,7 @@ try {
     }));
   }, frame);
   const inspect = async () => {
-    const size = await audience.evaluate(() => { const c = document.querySelector('canvas'); return { w: c.width, h: c.height, viewportWidth: innerWidth, viewportHeight: innerHeight }; });
+    const size = await audience.evaluate(() => { const c = document.querySelector('canvas'); return { w: c.width, h: c.height }; });
     return audience.evaluate(corners => {
     const canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height, image = ctx.getImageData(0, 0, w, h).data;
@@ -81,7 +81,7 @@ try {
     }
     const p = (Math.floor(h * .5) * w + Math.floor(w * .025)) * 4;
     return { left, right, interior, outside: Array.from(image.slice(p, p + 4)), width: w, height: h };
-    }, portalGeometry(size.w, size.h, 'words', size.viewportWidth, size.viewportHeight).inner);
+    }, portalGeometry(size.w, size.h, 'words').inner);
   };
   await wait(8000);
   const idle = await inspect(); assert.equal(idle.left + idle.right, 0);

@@ -4,6 +4,7 @@ const OUTER = [[80, 56], [249, 26], [299, 198], [22, 263]];
 const INNER = [[91, 69], [238, 44], [278, 184], [47, 241]];
 export const SCENE_ROTATIONS = Object.freeze({ heat: 16, robots: -6, monsters: 0, lines: 26, garden: 10, cartoon: 21, words: -12 });
 export const TRANSITION_MS = 1400;
+export const LOGO_BOTTOM = .075;
 
 function rotate(points, degrees) {
   const angle = degrees * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
@@ -14,15 +15,12 @@ function bounds(points) {
   const x = Math.min(...xs), y = Math.min(...ys);
   return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }
-export function portalGeometry(w, h, sceneId, viewportWidth = w, viewportHeight = h) {
+export function portalGeometry(w, h, sceneId) {
   const angle = SCENE_ROTATIONS[sceneId] ?? 0;
   const outer = rotate(OUTER, angle), inner = rotate(INNER, angle), box = bounds(outer);
-  // One screen inch (96 CSS pixels), converted to the contained canvas's scale.
-  // Keep the inset stable across render quality and Retina pixel densities;
-  // very small previews cap it at a quarter of the available short edge.
-  const inset = Math.min(96 * Math.max(w / viewportWidth, h / viewportHeight), Math.min(w, h) / 4);
-  // Fit each rotation independently so it uses all available space without
-  // stretching the silhouette or reserving room for another scene's angle.
+  // Fit each rotation to the screen with only a 1.5% short-edge buffer.
+  // One scale preserves the entire silhouette, rim and opening.
+  const inset = Math.min(w, h) * .015;
   const scale = Math.min((w - 2 * inset) / box.width, (h - 2 * inset) / box.height);
   const place = p => ({ x: w / 2 + (p.x - box.x - box.width / 2) * scale, y: h / 2 + (p.y - box.y - box.height / 2) * scale });
   return { outer: outer.map(place), inner: inner.map(place) };

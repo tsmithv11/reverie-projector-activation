@@ -4,7 +4,7 @@ import { AdaptiveQuality } from './core/performance.js';
 import { outputSize, fitCameraAnalysis } from './core/display.js';
 import { camera } from './scenes/base.js';
 import { isLiveScene } from './core/live-scenes.cjs';
-import { portalGeometry, polygonPath, artworkTransform, paintBackground, paintTransition } from './core/composition.js';
+import { LOGO_BOTTOM, portalGeometry, polygonPath, artworkTransform, paintBackground, paintTransition } from './core/composition.js';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
 const brandLogo = new Image();
 brandLogo.src = 'brand/reverie-logo-white.svg';
@@ -103,7 +103,7 @@ function finishComposition(w, h, cameraLive) {
   }
   if (brandLogoReady) {
     const logoWidth = w * .145, logoHeight = logoWidth * 224.984 / 1026;
-    ctx.drawImage(brandLogo, w * .055, h * .075 - logoHeight, logoWidth, logoHeight);
+    ctx.drawImage(brandLogo, w * .055, h * LOGO_BOTTOM - logoHeight, logoWidth, logoHeight);
   }
   if (latest?.demo && cameraLive) { ctx.fillStyle = '#fff4fb'; ctx.textAlign = 'right'; ctx.font = `${w * .01}px monospace`; ctx.fillText('DEMO / SYNTHETIC CROWD', w * .94, h * .93); }
   ctx.restore();
@@ -124,8 +124,8 @@ function tick(now) {
     // A new opaque canvas starts black; seed it before any transition snapshot.
     paintBackground(ctx, w, h);
   }
-  const nextPortalKey = `${w}:${h}:${innerWidth}:${innerHeight}:${state.active}`;
-  if (portalKey !== nextPortalKey) { portal = portalGeometry(w, h, state.active, innerWidth, innerHeight); portalKey = nextPortalKey; }
+  const nextPortalKey = `${w}:${h}:${state.active}`;
+  if (portalKey !== nextPortalKey) { portal = portalGeometry(w, h, state.active); portalKey = nextPortalKey; }
   const live = latest && Date.now() - latest.at < 2000;
   const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready && state.cloud.sceneId === state.active;
   let analysis = live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } };

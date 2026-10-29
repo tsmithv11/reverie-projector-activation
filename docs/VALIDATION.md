@@ -267,3 +267,19 @@ Each scene now fits its own rotated bounds to the output instead of sharing the 
 All 101 unit/regression tests passed. The existing composition rehearsal passed for all seven scenes at 4:3 and 16:9, with exact gradient midpoints, continuous rapid reselection, successful resizing and no renderer errors. Screenshots were visually checked. A separate geometry check passed 756 combinations of scenes, formats, quality levels, pixel densities and viewport sizes, confirming maximum fit, the expected screen margin and in-bounds corners.
 
 The display and text-scene rehearsals also passed, including format persistence, localized motion response, camera isolation and quality changes. The Mac app and transfer ZIP were rebuilt; the extracted app passed strict signature verification and its audience bundle matched the tested build. Small wonderful things, the garden and Words in motion each sampled 30 fps in the packaged launch, with no renderer errors or cloud requests. The ZIP checksum sidecar was refreshed.
+
+## Scene expansion aligned with the logo — 2026-10-29
+
+Replaced the one-inch inset with the requested logo alignment. Every shape's highest point now shares the Reverie logo's bottom edge at 7.5% of output height. At 4:3 and 16:9, each frame fills 85% of output height, leaving a matching bottom margin. One uniform scale enlarges the outer frame and opening together, preserving all angles and proportions. Narrow outputs cap the width and retain the same top alignment.
+
+All 101 unit/regression tests and the composition rehearsal for all seven scenes at 4:3 and 16:9 passed without renderer errors. A separate geometry check covered 56 scene/size combinations, confirming exact logo alignment, proportional enlargement of every inner and outer edge, and in-bounds corners, including portrait and small preview outputs. Rendered bay, garden and typography screenshots were visually inspected in 4:3 and widescreen.
+
+The rebuilt Mac app and transfer ZIP passed extraction, strict signature verification and packaged-bundle comparison. The extracted app sampled 30 fps in the bay, garden and typography scenes with no renderer errors or cloud requests. Its ZIP checksum sidecar was refreshed.
+
+## Expansion to a narrow screen-edge buffer — 2026-10-29
+
+The shapes now use the maximum proportional size inside a centered 1.5% short-edge buffer, approximately 16 pixels at 1080p. This replaces the logo alignment constraint. Every scene is larger at 4:3 and 16:9, with its original silhouette, opening and rotation preserved; extra space on the unconstrained axis avoids stretching or clipping the shape.
+
+The composition rehearsal passed for all seven scenes in both formats, including transitions, rapid selection and resizing, with no renderer errors. All 56 geometry checks passed for proportional scaling, centering, the exact minimum buffer and in-bounds corners across normal, portrait and small preview outputs. Bay, garden and camera-scene screenshots were visually inspected.
+
+The rebuilt Mac app and ZIP passed extraction, strict signature verification and comparison with the tested audience bundle. The packaged bay, garden and typography scenes each sampled 30 fps without renderer errors or cloud requests. The ZIP checksum was refreshed.

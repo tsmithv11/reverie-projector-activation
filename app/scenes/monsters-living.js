@@ -10,14 +10,14 @@ const TAU = Math.PI * 2;
 export default class LivingMonsters extends Monsters {
   initialize() {
     this.disposed=false;this.images={};this.sprites={};
-    this.background=new Image();
-    this.background.onload=()=>{if(!this.disposed)this.artwork=new LivingBay(this.background);};
-    this.background.onerror=()=>{this.assetError=true;};
-    this.background.src='scenes/small-wonderful-things/bay-empty.png';
-    const cast=this.images.cast=new Image();
-    cast.onload=()=>{if(!this.disposed){this.puppets=new LivingPuppets(cast);if(this.puppets.error)this.assetError=true;}};
-    cast.onerror=()=>{this.assetError=true;};
-    cast.src='scenes/small-wonderful-things/connected-v3/cast.png';
+    const names=['surround','interior','rock','tall','green','jumper'];
+    let loaded=0;
+    for(const name of names){
+      const image=this.images[name]=new Image();
+      image.onload=()=>{if(!this.disposed&&++loaded===names.length){this.artwork=new LivingBay(this.images);this.puppets=new LivingPuppets(this.images);}};
+      image.onerror=()=>{this.assetError=true;};
+      image.src='scenes/small-wonderful-things/reference-v4/'+name+'.png';
+    }
   }
   activate() {
     this.creatures = LIVING_CAST.map((s,i) => new LivingCreature(s,i));
@@ -74,33 +74,31 @@ export default class LivingMonsters extends Monsters {
   }
 
   render(ctx, { w, h, foregroundClip }) {
-    if(this.assetError)throw Error('Living world painted artwork could not load');
+    if(this.assetError)throw Error('Living world reference artwork could not load');
     if(!this.artwork||!this.puppets){ctx.fillStyle='#d8b2da';ctx.fillRect(0,0,w,h);return;}
     ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
-    this.artwork.render(ctx,w,h,this.animationTime);
-    ctx.save();this.artwork.waterClip(ctx,w,h);this.water.drawWaves(ctx,w,h,this.animationTime);ctx.restore();
-    const landscapeWidth=w,landscapeHeight=h;
-    let ox=0,oy=0;
+    this.artwork.render(ctx,w,h);
     ctx.save();
     if(foregroundClip){
       ctx.beginPath();foregroundClip.forEach((p,i)=>i?ctx.lineTo(p.x*w,p.y*h):ctx.moveTo(p.x*w,p.y*h));ctx.closePath();ctx.clip();
-      ox=Math.min(...foregroundClip.map(p=>p.x))*w;oy=Math.min(...foregroundClip.map(p=>p.y))*h;
+      const ox=Math.min(...foregroundClip.map(p=>p.x))*w,oy=Math.min(...foregroundClip.map(p=>p.y))*h;
       w=Math.max(...foregroundClip.map(p=>p.x))*w-ox;h=Math.max(...foregroundClip.map(p=>p.y))*h-oy;
       ctx.translate(ox,oy);
     }
-    const surface=(x,y)=>(this.water.surface((x*w+ox)/landscapeWidth,(y*h+oy)/landscapeHeight)*landscapeHeight-oy)/h;
+    this.artwork.interior(ctx,w,h);
+    ctx.save();this.artwork.waterClip(ctx,w,h);this.water.drawWaves(ctx,w,h,this.animationTime);ctx.restore();
+    const surface=(x,y)=>this.water.surface(x,y);
     this.puppets.render(ctx,this.creatures,w,h,c=>c.pose(),surface);
-    ctx.save();ctx.translate(-ox,-oy);this.artwork.rock(ctx,landscapeWidth,landscapeHeight);ctx.restore();
+    this.artwork.rock(ctx,w,h);
+    this.puppets.render(ctx,this.creatures,w,h,c=>c.pose(),surface,true);
     this.water.render(ctx,w,h,effect=>({x:effect.x,y:surface(effect.x,effect.y)}));
     for(const c of this.creatures){
       const p=c.pose(),contact=clamp(1-p.depth*1.5)*clamp(1-p.lift/.025);
-      if(contact<=0)continue;
-      ctx.save();ctx.translate(-ox,-oy);
-      this.water.contact(ctx,(p.x*w+ox)/landscapeWidth,(c.spec.y*h+oy)/landscapeHeight,c.spec.height*h*.27/landscapeWidth,contact,landscapeWidth,landscapeHeight);ctx.restore();
+      this.water.contact(ctx,p.x,c.spec.y,c.spec.height*h*.22/w,contact,w,h);
     }
-
+    this.water.contact(ctx,.65,.757,.105,.7,w,h);
     for(const bubble of this.bubbles)this.drawBubble(ctx,bubble,w,h);
-    ctx.restore();this.artwork.shore(ctx,landscapeWidth,landscapeHeight);
+    ctx.restore();
   }
 
   deactivate() { super.deactivate(); this.water?.cleanup(); }

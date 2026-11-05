@@ -9,9 +9,14 @@ const fixtureFiles=['dist/living-world-check.html','dist/living-world-check.js']
 await writeFile(fixtureFiles[0],'<html><body style="margin:0;background:#25172e"><canvas style="width:100vw;height:100vh;display:block"></canvas><script type="module" src="living-world-check.js"></script></body></html>');
 await build({stdin:{contents:`
   import Living from './app/scenes/monsters-living.js';
+  import {portalGeometry,paintReferenceFrame} from './app/core/composition.js';
   window.scene=new Living();scene.initialize();scene.activate();
-  window.canvas=document.querySelector('canvas');canvas.width=960;canvas.height=540;
-  window.render=()=>scene.render(canvas.getContext('2d'),{w:canvas.width,h:canvas.height});
+  window.canvas=document.querySelector('canvas');canvas.width=960;canvas.height=758;window.composed=true;
+  window.render=()=>{
+    const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height,portal=portalGeometry(w,h,'monstersLiving');
+    scene.render(ctx,{w,h,foregroundClip:composed?portal.inner.map(p=>({x:p.x/w,y:p.y/h})):undefined});
+    if(composed)paintReferenceFrame(ctx,portal,w,h);
+  };
   window.step=(seconds,moving=false)=>{
     for(let i=0;i<Math.round(seconds*60);i++)scene.update({dt:1/60,intensity:.85,quality:2,analysis:{motion:{points:moving ? scene.creatures.map((c,j)=>({x:c.spec.x+Math.sin(scene.elapsed*.7+j)*.06,y:.32+j*.045,strength:.8})) : []}}});
     render();
@@ -40,35 +45,57 @@ try {
   assert.equal((await operator.evaluate(()=>installation.state())).active,'monsters');
   await operator.evaluate(()=>installation.command('select','monstersLiving'));await wait(1600);
   assert.equal((await operator.evaluate(()=>installation.state())).rendering.failure,'');
-  await app.evaluate(({BrowserWindow})=>{const fixture=new BrowserWindow({width:960,height:540,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});fixture.loadURL('reverie://app/living-world-check.html');});
+  await app.evaluate(({BrowserWindow})=>{const fixture=new BrowserWindow({width:960,height:758,useContentSize:true,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});fixture.loadURL('reverie://app/living-world-check.html');});
   let fixture;
   for(let i=0;i<100;i++){fixture=app.windows().find(w=>w.url().endsWith('/living-world-check.html'));if(fixture)break;await wait(50);}
-  assert(fixture);await fixture.waitForFunction(()=>window.scene?.puppets && scene.artwork?.mode==='painted-reference');
+  assert(fixture);await fixture.waitForFunction(()=>window.scene?.puppets && scene.artwork?.mode==='reference-layers');
+  const capture=async name=>writeFile('test-results/'+name,Buffer.from(await fixture.evaluate(()=>canvas.toDataURL('image/png').split(',')[1]),'base64'));
   await fixture.evaluate(()=>step(.5));
+  await capture('living-world-reference-composition.png');
+  await fixture.evaluate(()=>{window.composed=false;canvas.height=850;render();});
   // Check the drawn facial expression at partial eye closure.
-  await fixture.evaluate(()=>{scene.creatures[0].blink=.65;render();});await fixture.screenshot({path:'test-results/living-world-blink.png'});
+  await fixture.evaluate(()=>{scene.creatures[0].blink=.65;render();});await capture('living-world-blink.png');
   await fixture.evaluate(()=>{scene.creatures[0].blink=0;render();});
   const rig=await fixture.evaluate(()=>({mode:scene.puppets.mode,environment:scene.artwork.mode,
-    characters:scene.creatures.length,connectedAtlas:scene.images.cast.naturalWidth,
+    characters:scene.creatures.length,connectedAtlas:scene.images.tall.naturalWidth,
     gpu:!!scene.puppets.gl,error:scene.puppets.error||''}));
-  assert.equal(rig.mode,'connected-painted-mesh');assert.equal(rig.environment,'painted-reference');
-  assert.equal(rig.characters,6);assert(rig.connectedAtlas>1000);assert(rig.gpu,rig.error);
+  assert.equal(rig.mode,'reference-character-mesh');assert.equal(rig.environment,'reference-layers');
+  assert.equal(rig.characters,3);assert(rig.connectedAtlas>1000);assert(rig.gpu,rig.error);
   const idleWater=await fixture.evaluate(()=>{
     const ctx=canvas.getContext('2d'),before=scene.animationTime;
-    render();const a=ctx.getImageData(0,0,960,540).data;
-    scene.animationTime+=1;scene.water.time+=1;render();const b=ctx.getImageData(0,0,960,540).data;
+    render();const a=ctx.getImageData(0,0,960,850).data;
+    scene.animationTime+=1;scene.water.time+=1;render();const b=ctx.getImageData(0,0,960,850).data;
     const difference=(x,y,w,h)=>{let changed=0,total=0;for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++){
       const k=(j*960+i)*4;if(Math.abs(a[k]-b[k])+Math.abs(a[k+1]-b[k+1])+Math.abs(a[k+2]-b[k+2])>8)changed++;total++;
     }return changed/total;};
-    const result={water:difference(350,475,280,55),sky:difference(5,5,100,25),rock:difference(525,330,20,40)};
+    const result={water:difference(150,740,620,90),sky:difference(5,5,100,25),rock:difference(610,550,15,25)};
     scene.animationTime=before;scene.water.time-=1;render();return result;
   });
   assert(idleWater.water>.015,'painted foreground crests must move while idle');
   assert.equal(idleWater.sky,0);assert.equal(idleWater.rock,0);
-  await fixture.screenshot({path:'test-results/living-world-idle.png'});
-  await fixture.evaluate(()=>step(5));await fixture.screenshot({path:'test-results/living-world-peek.png'});
-  await fixture.evaluate(()=>step(1.2,true));await fixture.screenshot({path:'test-results/living-world-active.png'});
-  await fixture.evaluate(()=>step(1.4,true));await fixture.screenshot({path:'test-results/living-world-splash.png'});
+  await capture('living-world-idle.png');
+  await fixture.evaluate(()=>step(5));await capture('living-world-peek.png');
+  await fixture.evaluate(()=>step(1.2,true));await capture('living-world-active.png');
+  await fixture.evaluate(()=>{window.savedBubbles=scene.bubbles;scene.bubbles=[];render();});await capture('living-world-wave-detail.png');
+  await fixture.evaluate(()=>{scene.bubbles=window.savedBubbles;delete window.savedBubbles;});
+  await fixture.evaluate(()=>step(1.4,true));await capture('living-world-splash.png');
+  await fixture.evaluate(()=>{scene.bubbles=[];render();});await capture('living-world-shoulders.png');
+  // Inspect the demanding poses explicitly, not whichever phase a timer lands on.
+  for(const [id,kind] of [['tall','greet'],['green','peek'],['green','retreat'],['jumper','hop']]){
+    await fixture.evaluate(([id,kind])=>{
+      scene.activate();for(const c of scene.creatures){c.nextIdle=100;c.cooldown=100;}
+      scene.creatures.find(c=>c.spec.id===id).begin(kind,.9,.45);
+    },[id,kind]);
+    for(let frame=0;frame<12;frame++){
+      await fixture.evaluate(()=>step(.3));
+      await capture('living-world-review-'+id+'-'+kind+'-'+String(frame).padStart(2,'0')+'.png');
+      if(id==='jumper'&&frame===2){
+        await fixture.evaluate(()=>{window.composed=true;canvas.height=758;render();});
+        await capture('living-world-reference-action.png');
+        await fixture.evaluate(()=>{window.composed=false;canvas.height=850;render();});
+      }
+    }
+  }
   const perf=await fixture.evaluate(()=>{
     const samples=[];
     for(let i=0;i<120;i++){const t=performance.now();step(1/60,true);samples.push(performance.now()-t);}
@@ -76,7 +103,7 @@ try {
   });
   if(process.argv.includes('--record')) {
     const video=await fixture.evaluate(async()=>{
-      scene.activate();const stream=canvas.captureStream(60),chunks=[],recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9',videoBitsPerSecond:4500000});
+      scene.activate();window.composed=true;canvas.height=758;render();const stream=canvas.captureStream(60),chunks=[],recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9',videoBitsPerSecond:4500000});
       recorder.ondataavailable=e=>chunks.push(e.data);const done=new Promise(r=>recorder.onstop=r);recorder.start();
       let start,last;await new Promise(resolve=>{const frame=now=>{start??=now;last??=now;const time=(now-start)/1000;
         scene.update({dt:Math.min(.05,(now-last)/1000),intensity:.85,quality:2,analysis:{motion:{points:time>6&&time<15 ? scene.creatures.map((c,j)=>({x:c.spec.x+Math.sin(time*.7+j)*.07,y:.35+j*.045,strength:.8})) : []}}});last=now;render();
@@ -84,10 +111,13 @@ try {
       recorder.stop();await done;stream.getTracks().forEach(t=>t.stop());
       return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(new Blob(chunks,{type:'video/webm'}));});
     });
-    await writeFile('test-results/living-world-painted-preview.webm',Buffer.from(video,'base64'));
+    await writeFile('test-results/living-world-reference-preview.webm',Buffer.from(video,'base64'));
+    await fixture.evaluate(()=>{window.composed=false;canvas.height=850;render();});
   }
-  await fixture.evaluate(()=>step(1));await fixture.screenshot({path:'test-results/living-world-settled.png'});
+  await fixture.evaluate(()=>step(1));await capture('living-world-settled.png');
   assert.equal(await fixture.evaluate(()=>!!scene.artwork.gl),false,'the reference environment is never displaced');
+  await fixture.evaluate(()=>{scene.puppets.gl.getExtension('WEBGL_lose_context').loseContext();render();});
+  await capture('living-world-fallback.png');
   await fixture.evaluate(()=>{scene.cleanup();if(scene.creatures.length || scene.water.rings.length || scene.puppets)throw Error('cleanup leaked');});
   // A camera outage must leave the local world alive, with no camera fallback.
   await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('frame');ipcMain.handle('frame',()=>null);});

@@ -4,7 +4,7 @@ import { AdaptiveQuality } from './core/performance.js';
 import { outputSize, outputArea, fitCameraAnalysis } from './core/display.js';
 import { camera } from './scenes/base.js';
 import { isLiveScene } from './core/live-scenes.cjs';
-import { LOGO_BOTTOM, REVERIE_PALETTE, portalGeometry, polygonPath, artworkTransform, reverieGradient, paintBackground, paintTransition } from './core/composition.js';
+import { LOGO_BOTTOM, REVERIE_PALETTE, portalGeometry, polygonPath, artworkTransform, reverieGradient, paintBackground, paintTransition, paintReferenceFrame } from './core/composition.js';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
 const brandLogo = new Image();
 brandLogo.src = 'brand/reverie-logo-white.svg';
@@ -94,11 +94,12 @@ function renderArtworkPortal(context) {
   }
   let rendered;
   if (isArtworkScene(state.active)) {
-    // Quarter as many artwork pixels, then upscale once inside the crisp portal.
-    const gw = w / 2, gh = h / 2;
+    // Render artwork at the scene’s quality scale beneath the crisp portal.
+    const artworkScale = state.active === 'monstersLiving' ? .75 : .5;
+    const gw = Math.round(w * artworkScale), gh = Math.round(h * artworkScale);
     if (artworkCanvas.width !== gw || artworkCanvas.height !== gh) { artworkCanvas.width = gw; artworkCanvas.height = gh; }
-    // The bay stays upright and continuous across the frame. Only its creature
-    // and particle layer is clipped; the empty landscape fills the whole output.
+    // Both bays stay upright. Each scene decides how its landscape and
+    // foreground fill the shared opening and surrounding screen.
     const foregroundClip = landscape ? portal.inner.map(p => ({ x: p.x / w, y: p.y / h })) : undefined;
     rendered = host.render(artworkCtx, { ...context, w: gw, h: gh, frame: null, foregroundClip });
     if (rendered) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; ctx.drawImage(artworkCanvas, 0, 0, w, h); }
@@ -109,11 +110,14 @@ function finishComposition(w, h, cameraLive) {
   // Every world shares the reference silhouette, with its own fixed rotation.
   ctx.save();
   const cameraScene = ['heat', 'lines', 'words', 'afterglow'].includes(state.active) || isLiveScene(state.active);
-  const wash = reverieGradient(ctx, w, h, cameraScene ? .6 : state.active === 'monstersLiving' ? .62 : 85 / 255, cameraScene ? .6 : state.active === 'monstersLiving' ? .50 : 68 / 255);
-  if (cameraScene || isBayScene(state.active)) { ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); polygonPath(ctx, portal.inner); ctx.fill('evenodd'); }
-  const border = ctx.createLinearGradient(0, 0, w, h);
-  border.addColorStop(0, REVERIE_PALETTE.pink); border.addColorStop(.5, REVERIE_PALETTE.orchid); border.addColorStop(1, REVERIE_PALETTE.lilac);
-  ctx.fillStyle = border; ctx.beginPath(); polygonPath(ctx, portal.outer); polygonPath(ctx, portal.inner); ctx.fill('evenodd');
+  const wash = reverieGradient(ctx, w, h, cameraScene ? .6 : 85 / 255, cameraScene ? .6 : 68 / 255);
+  if (cameraScene || state.active === 'monsters') { ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); polygonPath(ctx, portal.inner); ctx.fill('evenodd'); }
+  if (state.active === 'monstersLiving') paintReferenceFrame(ctx, portal, w, h);
+  else {
+    const border = ctx.createLinearGradient(0, 0, w, h);
+    border.addColorStop(0, REVERIE_PALETTE.pink); border.addColorStop(.5, REVERIE_PALETTE.orchid); border.addColorStop(1, REVERIE_PALETTE.lilac);
+    ctx.fillStyle = border; ctx.beginPath(); polygonPath(ctx, portal.outer); polygonPath(ctx, portal.inner); ctx.fill('evenodd');
+  }
   if (!isArtworkScene(state.active) && !['words', 'afterglow'].includes(state.active)) {
     ctx.save(); ctx.beginPath(); polygonPath(ctx, portal.inner); ctx.clip();
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);

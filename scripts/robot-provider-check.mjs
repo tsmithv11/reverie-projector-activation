@@ -1,13 +1,14 @@
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { CARTOON_PROMPT, liveScene } from '../app/core/live-scenes.cjs';
+import { CARTOON_PROMPT, LIVE_SCENE_IDS, liveScene } from '../app/core/live-scenes.cjs';
+import { SCENES } from '../app/core/settings.cjs';
 
 const sceneId = process.argv.find(arg => arg.startsWith('--scene='))?.slice(8) || (process.argv.includes('--cartoon') ? 'cartoon' : 'robots');
-const prompts = { robots: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.', cartoon: CARTOON_PROMPT, animation3d: '3D animation style', cyberpunk: 'Cyberpunk neon anime style', claymation: 'Transform the entire scene into handcrafted claymation. Make every person, object, and background out of sculpted modeling clay, with visible fingerprints, soft rounded shapes, matte clay textures, and a stop-motion animation look. Preserve the original composition and movement.' };
+const prompts = { robots: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.', cartoon: CARTOON_PROMPT };
 prompts.ghibli25 = liveScene('ghibli25').prompt;
 assert(sceneId in prompts, 'Unknown test scene');
-const expectedModel = ['robots', 'ghibli25'].includes(sceneId) ? 'lucy-2.5' : 'lucy-restyle-2';
+const expectedModel = ['robots', 'ghibli25'].includes(sceneId) ? 'lucy-latest' : 'lucy-restyle-2';
 const scenarios = ['missing-keys', 'fal-only', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live', 'decart-prompt-rejected'];
 const requestedScenario = process.argv.find(arg => arg.startsWith('--scenario='))?.slice(11);
 assert(!requestedScenario || scenarios.includes(requestedScenario), 'Unknown test scenario');
@@ -30,7 +31,7 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
       assert(ws.url().startsWith('wss://api3.decart.ai/'), 'Only the direct provider may open a socket in these scenarios'); sockets++;
       const params = new URL(ws.url()).searchParams;
       assert.equal(params.get('model'), expectedModel);
-      assert.equal(params.get('self_anchor'), expectedModel === 'lucy-2.5' ? 'false' : null);
+      assert.equal(params.get('self_anchor'), expectedModel === 'lucy-latest' ? 'false' : null);
       ws.onClose(() => { closed = true; setTimeout(() => ws.close({ code: 1000 }), 750); });
       ws.onMessage(message => {
         const data = JSON.parse(String(message));
@@ -84,8 +85,8 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
     if (scenario === 'decart-live') {
       await operator.evaluate(() => window.installation.configure({ quality: 'low' }));
       await waitState(state => state.camera.width === 480);
-      assert.equal(await operator.locator('.scene-card').count(), 11);
-      assert.equal(await operator.locator('#live-scene option').count(), 6);
+      assert.equal(await operator.locator('.scene-card').count(), SCENES.length);
+      assert.equal(await operator.locator('#live-scene option').count(), LIVE_SCENE_IDS.length);
       await operator.selectOption('#live-scene', sceneId);
       await operator.click('#generate-robot');
     }
@@ -95,7 +96,7 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
     } else if (scenario === 'decart-live') {
       const robot = await windowFor('robot');
       await robot.waitForFunction(() => globalThis.testCaptureSize);
-      assert.deepEqual(await robot.evaluate(() => globalThis.testCaptureSize), [1280, expectedModel === 'lucy-2.5' ? 720 : 704]);
+      assert.deepEqual(await robot.evaluate(() => globalThis.testCaptureSize), [1280, expectedModel === 'lucy-latest' ? 720 : 704]);
       await waitState(state => state.camera.width === 1280 && state.camera.height === 720);
       assert.deepEqual(await robot.evaluate(async () => {
         const frame = await window.installation.frame(-1);
@@ -115,10 +116,9 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
       await waitState(state => state.cloud.ready);
       const live = await operator.evaluate(() => window.installation.state());
       assert.equal(live.cloud.provider, 'decart'); assert.equal(live.active, sceneId); assert.equal(live.cloud.count, 1);
-      assert.match(live.cloud.display, expectedModel === 'lucy-2.5' ? /Lucy 2\.5/ : /Lucy Restyle 2/);
+      assert.match(live.cloud.display, expectedModel === 'lucy-latest' ? /Lucy Latest/ : /Lucy Restyle 2/);
       assert(promptReceived, 'The SDK must send the configured prompt and enhancement setting');
       if (sceneId === 'ghibli25') await operator.screenshot({ path: 'test-results/ghibli25-operator.png', fullPage: true });
-      if (sceneId === 'claymation') await operator.screenshot({ path: 'test-results/restyles-operator.png', fullPage: true });
       await operator.evaluate(() => window.installation.command('select', 'heat'));
     }
     await waitState(state => !state.cloud.streaming && !state.cloud.closing);

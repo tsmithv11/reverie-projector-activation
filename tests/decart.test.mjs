@@ -46,7 +46,7 @@ test('Decart auth scopes a temporary token with a provider-side duration backsto
   assert.equal(token, 'temporary-token'); assert.equal(request.url, TOKEN_URL);
   assert.equal(TOKEN_URL, 'https://api.decart.ai/v1/client/tokens');
   assert.equal(request.headers['x-api-key'], 'private-test-key');
-  assert.deepEqual(JSON.parse(request.body), { expiresIn: 120, allowedModels: ['lucy-2.5'], constraints: { realtime: { maxSessionDuration: 100 } } });
+  assert.deepEqual(JSON.parse(request.body), { expiresIn: 120, allowedModels: ['lucy-latest'], constraints: { realtime: { maxSessionDuration: 100 } } });
   assert(request.signal instanceof AbortSignal);
 });
 
@@ -60,7 +60,7 @@ test('Decart auth reports bad keys, billing, limits, service and malformed respo
 });
 
 for (const sceneId of LIVE_SCENE_IDS) test(`${sceneId} scopes credentials to its model and uses its native frame size`, async () => {
-  const expectedModel = ['robots', 'ghibli25'].includes(sceneId) ? 'lucy-2.5' : 'lucy-restyle-2';
+  const expectedModel = ['robots', 'ghibli25'].includes(sceneId) ? 'lucy-latest' : 'lucy-restyle-2';
   let body;
   await mintDecartToken('private-test-key', async (_, options) => {
     body = JSON.parse(options.body);
@@ -69,7 +69,7 @@ for (const sceneId of LIVE_SCENE_IDS) test(`${sceneId} scopes credentials to its
   assert.deepEqual(body.allowedModels, [expectedModel]);
   const model = decartModel(sceneId);
   assert.equal(model.name, expectedModel); assert.equal(model.width, 1280);
-  assert.equal(model.height, expectedModel === 'lucy-2.5' ? 720 : 704);
+  assert.equal(model.height, expectedModel === 'lucy-latest' ? 720 : 704);
   await assert.rejects(mintDecartToken('private-test-key', () => { throw Error('Must not authenticate an unknown scene'); }, 'unknown'), /Unknown live scene/);
 });
 
@@ -117,6 +117,29 @@ class Socket extends EventTarget {
   finish() { this.readyState = 3; this.dispatchEvent(Object.assign(new Event('close'), { code: 1000, wasClean: true })); }
 }
 class Peer { close() { this.closed = true; } }
+
+test('Lucy Latest keeps self-anchoring disabled at connect time for both audience-editing scenes', async () => {
+  const source = readFileSync(new URL('../app/core/decart-connection.js', import.meta.url), 'utf8')
+    .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+  for (const sceneId of LIVE_SCENE_IDS) {
+    let options;
+    const context = vm.createContext({
+      WebSocket: Socket, RTCPeerConnection: Peer, setTimeout, clearTimeout, liveScene, safeDiagnostic,
+      models: { realtime: name => ({ name }) },
+      createDecartClient: () => ({ realtime: { connect: async (_, value) => {
+        options = value; return { on() {}, disconnect() {} };
+      } } })
+    });
+    const open = vm.runInContext(`${source}\nopenDecartConnection`, context);
+    const connection = open({ token: 'test-token', sceneId, stream: {}, onError: () => assert.fail('Unexpected error'), onRemoteStream() {}, onStage() {} });
+    const editing = ['robots', 'ghibli25'].includes(sceneId);
+    assert.equal(options.model.name, editing ? 'lucy-latest' : 'lucy-restyle-2');
+    assert.equal(options.queryParams?.self_anchor, editing ? 'false' : undefined);
+    assert.equal(options.initialState.prompt.enhance, sceneId === 'ghibli25');
+    assert.equal(options.retries, 0);
+    await connection.close();
+  }
+});
 
 test('Decart forwards nested failures from both connect rejection and emitted SDK errors, and ignores late events after close', async () => {
   const source = readFileSync(new URL('../app/core/decart-connection.js', import.meta.url), 'utf8')

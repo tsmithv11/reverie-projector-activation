@@ -84,9 +84,9 @@ export function openDecartConnection({ token, stream, sceneId, onRemoteStream, o
   };
   client.realtime.connect(stream, {
     model, mirror: false, retries: 0,
-    // Lucy 2.5 otherwise anchors to earlier generated people. Restyle 2 does
-    // not expose this option. It must be set on connect, not in the prompt.
-    ...(scene.model === 'lucy-2.5' ? { queryParams: { self_anchor: 'false' } } : {}),
+    // Keep changing audiences anchored to live input even as lucy-latest advances.
+    // Restyle 2 does not expose this setting; only opted-in scenes send it.
+    ...(scene.selfAnchor === false ? { queryParams: { self_anchor: 'false' } } : {}),
     initialState: { prompt: { text: scene.prompt, enhance: scene.enhance === true } },
     onRemoteStream: remote => { if (!stopped) onRemoteStream(remote); else remote.getTracks().forEach(track => track.stop()); },
     onConnectionChange: state => {

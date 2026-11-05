@@ -6,10 +6,7 @@ const SCENES = [
   { id: 'garden', name: 'A garden of possibility', color: '#ccdcb0' },
   { id: 'cartoon', name: 'Studio Ghibli watercolor', color: '#a6b690' },
   { id: 'words', name: 'Words in motion', color: '#C49ED8' },
-  { id: 'animation3d', name: '3D animation', color: '#8ca9ef' },
-  { id: 'cyberpunk', name: 'Cyberpunk neon anime', color: '#e66bda' },
-  { id: 'claymation', name: 'Claymation', color: '#d6a283' },
-  { id: 'ghibli25', name: 'Studio Ghibli · Lucy 2.5', color: '#8bb9bd' },
+  { id: 'ghibli25', name: 'Studio Ghibli · Lucy Latest', color: '#8bb9bd' },
   { id: 'monstersLiving', name: 'Small wonderful things · Living world', color: '#b4b3f6' },
   { id: 'afterglow', name: 'Afterglow', color: '#FAA0D0' }
 ];

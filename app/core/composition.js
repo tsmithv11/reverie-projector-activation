@@ -2,7 +2,7 @@
 // Rotate in pixel space so the tapered silhouette survives every output format.
 const OUTER = [[80, 56], [249, 26], [299, 198], [22, 263]];
 const INNER = [[91, 69], [238, 44], [278, 184], [47, 241]];
-export const SCENE_ROTATIONS = Object.freeze({ heat: 16, robots: -6, monsters: 0, lines: 26, garden: 10, cartoon: 21, words: -12, animation3d: -18, cyberpunk: 30, claymation: 5, ghibli25: 13, monstersLiving: 0, afterglow: -2 });
+export const SCENE_ROTATIONS = Object.freeze({ heat: 16, robots: -6, monsters: 0, lines: 26, garden: 10, cartoon: 21, words: -12, ghibli25: 13, monstersLiving: 0, afterglow: -2 });
 export const TRANSITION_MS = 1400;
 export const LOGO_BOTTOM = .075;
 // Exact colors from the supplied Reverie brand palette, shared by the surround,
@@ -24,6 +24,14 @@ function bounds(points) {
   return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }
 export function portalGeometry(w, h, sceneId) {
+  if (sceneId === 'monstersLiving') {
+    // Trace the user's complete composition, including the generous surround.
+    // Keep a uniform scale so widescreen output never stretches the opening.
+    const scale = Math.min(w / 2049, h / 1618), offset = (w - 2049 * scale) / 2;
+    const place = ([x,y]) => ({x:offset+x*scale,y:y*scale});
+    return {outer:[[498,381],[1203,311],[1349,1029],[240,1308]].map(place),
+      inner:[[562,457],[1138,401],[1252,970],[357,1193]].map(place)};
+  }
   const angle = SCENE_ROTATIONS[sceneId] ?? 0;
   const outer = rotate(OUTER, angle), inner = rotate(INNER, angle), box = bounds(outer);
   // Fit each rotation to the screen with only a 1.5% short-edge buffer.
@@ -37,6 +45,13 @@ export function portalGeometry(w, h, sceneId) {
 export function polygonPath(ctx, points) {
   points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
   ctx.closePath();
+}
+
+export function paintReferenceFrame(ctx, portal, w, h) {
+  ctx.save();
+  const border = ctx.createLinearGradient(w*.4, h*.2, w*.3, h*.82);
+  border.addColorStop(0, '#ee83c43d'); border.addColorStop(.52, '#f74ba966'); border.addColorStop(1, '#70277599');
+  ctx.fillStyle=border;ctx.beginPath();polygonPath(ctx,portal.outer);polygonPath(ctx,portal.inner);ctx.fill('evenodd');ctx.restore();
 }
 
 // Fit the artwork to the opening's rotated bounds; the common clip supplies

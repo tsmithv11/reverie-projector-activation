@@ -8,6 +8,8 @@ Runtime dependency license notices remain included in the packaged dependency tr
 - FAL JavaScript client 1.10.1: MIT. FAL/Decart usage is governed separately by the provider's terms and billing. Provider credentials are not included.
 - dotenv 17.2.3: BSD-2-Clause.
 
-Reference direction was supplied by the user. The application draws its local visual elements in Canvas; it does not ship the supplied reference screenshots as textures or transmit them to any provider. Brand colors were sampled from the public Reverie website; no remote brand assets, fonts, analytics or webpage code are loaded at runtime.
+Reference direction was supplied by the user. At runtime the application draws bundled artwork and procedural elements locally; it does not ship the supplied reference screenshots as textures or transmit them to a provider. Brand colors were sampled from the public Reverie website; no remote brand assets, fonts, analytics or webpage code are loaded at runtime.
 
 The garden's flower and butterfly atlas is original artwork generated with the built-in image generation tool on October 8, 2026, and bundled locally. Its prompt and provenance are retained in `assets/scenes/garden/provenance.json`. The visual direction draws on immersive botanical installations; no teamLab images or other installation artwork are included. All garden animation runs locally.
+
+Small wonderful things uses locally bundled artwork generated with the built-in image tool from the user’s visual references. The Living world revision uses three connected character cutouts, a purple rock, separate photographic and painted environment plates, and exact prompts under `assets/scenes/small-wonderful-things/reference-v4/`. These were generated using the user-supplied reference with the built-in image-generation tool. Earlier iteration assets remain retained. These assets are generated during authoring; character and water animation makes no runtime image-generation requests.

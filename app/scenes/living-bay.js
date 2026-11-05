@@ -1,13 +1,16 @@
-// Restore the original dimensional painting. Geometry and reflections are
-// drawn over it by LivingWater; the plate itself is never displaced.
-const ROCK=[[.451,.697],[.459,.650],[.474,.590],[.483,.566],[.495,.523],[.514,.493],[.531,.503],[.553,.548],[.571,.596],[.592,.626],[.613,.697],[.613,.716],[.448,.716]];
-const SHORE=[[1,.614],[.925,.681],[.89,.704],[.86,.747],[.84,.791],[.80,.819],[.77,.855],[.74,.891],[.71,.929],[.67,.974],[.64,1],[1,1]];
-const path=(ctx,points,w,h)=>{points.forEach(([x,y],i)=>i?ctx.lineTo(x*w,y*h):ctx.moveTo(x*w,y*h));ctx.closePath();};
+// Separate photographic surround and painted interior, as in the reference.
+// Neither image is sampled through a displacement/warping shader.
 export class LivingBay {
-  constructor(image){this.image=image;this.mode='painted-reference';}
-  render(ctx,w,h){ctx.drawImage(this.image,0,0,w,h);}
-  waterClip(ctx,w,h){ctx.beginPath();path(ctx,[[0,.602],[.68,.602],[1,.614],[1,1],[0,1]],w,h);path(ctx,ROCK,w,h);path(ctx,SHORE,w,h);ctx.clip('evenodd');}
-  rock(ctx,w,h){ctx.save();ctx.beginPath();path(ctx,ROCK,w,h);ctx.clip();ctx.drawImage(this.image,0,0,w,h);ctx.restore();}
-  shore(ctx,w,h){ctx.save();ctx.beginPath();path(ctx,SHORE,w,h);ctx.clip();ctx.drawImage(this.image,0,0,w,h);ctx.restore();}
-  cleanup(){this.image=null;}
+  constructor(images){this.images=images;this.mode='reference-layers';}
+  render(ctx,w,h){
+    const image=this.images.surround, scale=Math.max(w/image.naturalWidth,h/image.naturalHeight);
+    ctx.drawImage(image,(w-image.naturalWidth*scale)/2,(h-image.naturalHeight*scale)/2,image.naturalWidth*scale,image.naturalHeight*scale);
+  }
+  interior(ctx,w,h){ctx.drawImage(this.images.interior,0,0,w,h);}
+  waterClip(ctx,w,h){ctx.beginPath();ctx.rect(0,h*.595,w,h*.405);ctx.clip();}
+  rock(ctx,w,h){
+    const image=this.images.rock, height=h*.40, width=height*image.naturalWidth/image.naturalHeight;
+    ctx.drawImage(image,w*.47,h*.39,width,height);
+  }
+  cleanup(){this.images=null;}
 }

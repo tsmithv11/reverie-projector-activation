@@ -10,16 +10,11 @@ const spring = (body, key, target, frequency, dt, damping = 1) => {
   body[key] += body[velocity] * dt;
 };
 
-export const LIVING_CAST = CAST.map((s, i) => ({ ...s,
-  // Leave room for the larger hand arcs and the sloping bottom of the portal.
-  x: [.285,.655,.79,.17,.70,.39][i],
-  y: [.72,.727,.74,.83,.79,.865][i],
-  height: [.60,.40,.25,.245,.155,.23][i],
-  temperament: ['gentle', 'shy', 'bold', 'curious', 'playful', 'diver'][i],
-  mass: [1.6, 1, .85, .75, .48, .65][i],
-  travel: [.035,.045,.075,.12,.095,.07][i],
-  lift: [.014,.055,.11,.008,.075,.21][i],
-  // Connected drawings retain their artwork throughout each continuous action.
+export const LIVING_CAST = CAST.filter(s => ['tall','green','jumper'].includes(s.id)).map((s, i) => ({ ...s,
+  // The three distinct silhouettes and staging in the supplied reference.
+  x: [.15,.78,.39][i], y: [.755,.715,.77][i], height: [.70,.46,.27][i],
+  temperament: ['gentle','shy','diver'][i], mass: [1.6,1,.65][i],
+  travel: [.018,.065,.07][i], lift: [.014,.025,.19][i],
   frame: s.id === 'green' ? 1 : 0
 }));
 
@@ -29,7 +24,7 @@ export class LivingCreature {
     this.time = 0; this.phase = this.random() * Math.PI * 2;
     this.breathRate = .9 + this.random() * .6;
     this.x = spec.x; this.xV = 0;
-    this.depth = spec.id === 'jumper' ? 1.12 : spec.id === 'green' ? .06 : 0; this.depthV = 0;
+    this.depth = spec.id === 'jumper' ? .36 : spec.id === 'green' ? .025 : 0; this.depthV = 0;
     this.lift = 0; this.liftV = 0; this.lean = 0; this.leanV = 0;
     this.gaze = 0; this.gazeV = 0; this.squash = 0; this.squashV = 0;
     this.gesture = 0; this.gestureV = 0; this.energy = 0; this.energyV = 0;
@@ -37,7 +32,7 @@ export class LivingCreature {
     this.cooldown = .25 + index * .13; this.nextIdle = 1.8 + this.random() * 5 + index * .3;
     this.nextLook = .8 + this.random() * 2; this.look = 0;
     this.nextBlink = .7 + this.random() * 4; this.blinkAge = -1; this.blinkDuration = .2;
-    this.blink = 0; this.social = null; this.lastReaction = -10; this.wakeDistance = 0; this.surfaceUntil = 0;
+    this.blink = 0; this.social = null; this.lastReaction = -10; this.wakeDistance = 0; this.surfaceUntil = 4;
     this.strokePhase=this.phase;this.restX=spec.x;
     for(const [key,value] of Object.entries({head:0,armL:.36,elbowL:-.72,wristL:0,armR:-.34,elbowR:.68,wristR:0,legL:.06,legR:-.06,tail:0,mouth:.3,surprise:0})){
       this[key]=value;this[key+'V']=0;
@@ -95,21 +90,21 @@ export class LivingCreature {
     if (!this.action && this.cooldown === 0 && this.motionHold > .16 + this.index * .045) {
       const power = intensity * (.22 + .78 * clamp(strength * 1.8));
       let kind = s.id === 'tall' ? 'greet' : s.id === 'green' ? 'peek' : s.id === 'antenna' ? 'swim' : 'hop';
-      if (strength > .58 && ['green', 'antenna'].includes(s.id) && this.random() < .6) kind = 'retreat';
+      if (strength > .58 && ['green', 'antenna'].includes(s.id) && this.random() < .28) kind = 'retreat';
       this.begin(kind, power, focus);
       events.push({ kind: 'notice', x: this.x, power });
     } else if (!this.action && this.time >= this.nextIdle) {
       const choice = this.random();
       const kind = s.id === 'tall' ? (choice < .55 ? 'look' : 'greet')
         : s.id === 'green' ? 'peek'
-          : s.id === 'jumper' ? 'dive'
+          : s.id === 'jumper' ? (choice < .45 ? 'dive' : choice < .75 ? 'swim' : 'hop')
             : s.id === 'antenna' ? (choice < .65 ? 'swim' : 'dive')
               : choice < .35 ? 'dive' : choice < .65 ? 'swim' : 'look';
       this.begin(kind, .3 + this.random() * .25, clamp(s.x + (this.random() - .5) * .42,.05,.92));
     }
 
     let targetX = this.restX + Math.sin(this.time * .43 + this.phase) * s.travel * .04;
-    let targetDepth = s.id === 'jumper' && this.time > this.surfaceUntil ? 1.12 : s.id === 'green' ? .06 : 0;
+    let targetDepth = s.id === 'jumper' ? (this.time > this.surfaceUntil ? 1.12 : .36) : s.id === 'green' ? .025 : 0;
     let targetLift = 0, targetSquash = 0, targetGesture = socialLook ? .16 : 0, targetLean = this.gaze * .025;
     const idleSway=Math.sin(this.time*this.breathRate+this.phase)*.035;
     const joints={head:this.gaze*.18,armL:.36+idleSway,elbowL:-.72-idleSway*.7,wristL:idleSway,armR:-.34+idleSway,elbowR:.68-idleSway*.5,wristR:-idleSway,legL:.06,legR:-.06,
@@ -134,7 +129,7 @@ export class LivingCreature {
       }
       if (a.kind === 'swim') {
         targetX=a.startX+travel*smooth(p/.8);
-        targetGesture = env * (.25 + a.power); targetDepth = .08 + .06 * Math.sin(p * Math.PI * 2) * env;
+        targetGesture = env * (.25 + a.power); targetDepth = .36 + .06 * Math.sin(p * Math.PI * 2) * env;
         targetLean += -this.xV * 2.8;
         const paddle=env*(.55+a.power*.4),stroke=Math.sin(this.strokePhase);
         joints.armL+=paddle*(.55+stroke*.85);joints.armR-=paddle*(.55-stroke*.85);
@@ -144,8 +139,8 @@ export class LivingCreature {
         joints.tail+=Math.sin(this.strokePhase-.65)*paddle*.35;joints.head-=targetLean*.7;joints.mouth+=paddle*.25;
       }
       if (a.kind === 'peek') {
-        targetDepth = .06 + .90 * envelope(p, .2, .35) - .32 * envelope((p - .36) / .64, .35, .7);
-        targetX -= .045 * envelope(p, .2, .35);
+        targetDepth = .025 + (.25+a.power*.18) * envelope(p, .2, .35) - .035 * envelope((p - .36) / .64, .35, .7);
+        targetX -= .065 * envelope(p, .2, .35);
         targetLean += -.12 * envelope(p, .2, .35) + .09 * envelope((p - .45) / .55);
         const hiding=envelope(p,.2,.38),peeking=envelope((p-.4)/.6,.3,.8);
         joints.armL+=hiding*.65;joints.elbowL+=hiding*1.5;joints.armR-=hiding*.6;joints.elbowR-=hiding*1.2;
@@ -160,7 +155,7 @@ export class LivingCreature {
       }
       if (a.kind === 'dive') {
         // The little diver first surfaces inquisitively, then slips back down.
-        targetDepth = s.id === 'jumper' ? 1.12 * (1 - envelope(p, .3, .68)) : 1.12 * envelope(p, .25, .55);
+        targetDepth = s.id === 'jumper' ? .36 + .76 * (1 - envelope(p, .3, .68)) : 1.12 * envelope(p, .25, .55);
         targetLean += Math.sin(p * Math.PI * 2) * .38 * env;
         targetGesture = env * .24;
         joints.armL+=env*.8;joints.armR-=env*.7;joints.elbowL+=env*.45;joints.elbowR-=env*.45;
@@ -171,7 +166,7 @@ export class LivingCreature {
         // A single arch with a held anticipation and a soft landing. Spring
         // follow-through supplies inertia without resetting a pose or phase.
         targetLift = 4*flight*(1-flight) * s.lift * a.power;
-        targetDepth = a.fromDepth * (1 - smooth((p - .12) / .18));
+        targetDepth = a.fromDepth * (1 - smooth((p - .12) / .18)) + .36 * smooth((p-.73)/.27);
         targetSquash = -.14 * envelope(p / .23, .25, .65) + .09 * Math.sin(flight * Math.PI)
           - .12 * envelope((p - .7) / .3, .2, .5);
         targetLean += Math.sin(flight * Math.PI * 2) * .18 * a.sign * a.power;
@@ -182,12 +177,12 @@ export class LivingCreature {
         joints.legL+=prepare*.65+air*.9+land*.5;joints.legR-=prepare*.55+air*.7+land*.45;
         joints.head-=prepare*.19;joints.head+=air*.13;joints.tail+=air*.48;
         joints.mouth+=air*.55;joints.surprise=air*.15;
-        if (p > .58 && this.lift < s.height*.11 && this.liftV < 0 && !a.landed) {
+        if (p > .58 && this.lift-this.depth*s.height*1.2 < s.height*.035 && this.liftV < 0 && !a.landed) {
           events.push({ kind: 'land', x: this.x, power: a.power, speed: Math.abs(this.liftV) + a.power * .12 }); a.landed = true;
         }
       }
       if (p >= 1) {
-        if (a.kind === 'hop') this.surfaceUntil = this.time + 3.5 + this.random() * 2;
+        if (['hop','swim'].includes(a.kind)) this.surfaceUntil = this.time + 3.5 + this.random() * 2;
         if(a.kind==='swim')this.restX=clamp(this.x,s.x-s.travel,s.x+s.travel);
         this.action = null; this.completed++;
         this.cooldown = s.rest * (1 + this.random() * 1.5);

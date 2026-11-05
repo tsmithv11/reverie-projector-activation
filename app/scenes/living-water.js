@@ -49,8 +49,8 @@ export class LivingWater {
     // Small rolling ribbons use the painting's violet shadows and rose light.
     // Their curved silhouettes travel over an unchanged plate, with separate
     // crest and trough shading. There is no sampling or warping of the image.
-    for(let row=0;row<25;row++){
-      const depth=row/24,y=.61+Math.pow(depth,1.55)*.43;
+    for(let row=0;row<18;row++){
+      const depth=row/17,y=.61+Math.pow(depth,1.55)*.43;
       for(let k=0;k<8;k++){
         const seed=Math.sin(row*35.1+k*73.7)*437.3,random=seed-Math.floor(seed);
         const x=((k*.151+row*.063+time*(.002+depth*.006))%1.3)-.16;
@@ -59,14 +59,14 @@ export class LivingWater {
         const rise=(.0015+depth*.0045)*(.7+.3*Math.sin(time*.65+row+k));
         const light=Math.exp(-(((x-.36)/(.10+depth*.2))**2));
         const fill=ctx.createLinearGradient(0,(cy-rise)*h,0,(cy+rise*2)*h);
-        fill.addColorStop(0,light>.4?'#ffd7eb96':'#b5b9f58c');
-        fill.addColorStop(.36,light>.4?'#efa4d67a':'#656ed67a');
+        fill.addColorStop(0,light>.4?'#ffd7eb58':'#a8aff04c');
+        fill.addColorStop(.36,light>.4?'#efa4d63c':'#656ed63c');
         fill.addColorStop(1,'#3443a000');
         ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(x*w,cy*h);
         ctx.bezierCurveTo((x+length*.25)*w,(cy+rise*.4)*h,(x+length*.55)*w,(cy-rise)*h,(x+length*.74)*w,(cy-rise)*h);
         ctx.bezierCurveTo((x+length*.91)*w,(cy-rise)*h,(x+length*.92)*w,cy*h,(x+length)*w,(cy+rise)*h);
         ctx.quadraticCurveTo((x+length*.45)*w,(cy+rise*2.2)*h,x*w,cy*h);ctx.fill();
-        ctx.strokeStyle=light>.4?'#ffe9f2a0':'#e8c3ef78';ctx.lineWidth=Math.max(.5,h*(.0008+depth*.001));
+        ctx.strokeStyle=light>.4?'#ffe9f280':'#e8c3ef58';ctx.lineWidth=Math.max(.5,h*(.0008+depth*.001));
         ctx.beginPath();ctx.moveTo((x+length*.12)*w,cy*h);
         ctx.bezierCurveTo((x+length*.35)*w,cy*h,(x+length*.56)*w,(cy-rise)*h,(x+length*.74)*w,(cy-rise)*h);ctx.stroke();
       }

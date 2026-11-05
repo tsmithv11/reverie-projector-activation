@@ -14,6 +14,7 @@ const { resolveKeyPath } = require('./core/key-path.cjs');
 const { outputLayout, OutputPlacement } = require('./core/output-placement.cjs');
 const { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure } = require('./core/robot-status.cjs');
 const { LIVE_SCENE_IDS, isLiveScene, liveSceneEnabled, nextPlaylistScene } = require('./core/live-scenes.cjs');
+const { MAX_PEOPLE } = require('./core/segmentation-limits.cjs');
 protocol.registerSchemesAsPrivileged([{ scheme: 'reverie', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 if (process.env.REVERIE_TEST_DIR) app.setPath('userData', process.env.REVERIE_TEST_DIR);
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
@@ -278,7 +279,7 @@ app.whenReady().then(() => {
   handle('publish-segmentation', () => engine, data => {
     if (!data) { segmentationFrame = null; return true; }
     if (scheduler.active !== 'afterglow' || data.activation !== scheduler.activation || data.demo !== settings.demo || data.cameraId !== settings.cameraId || data.mirror !== settings.mirror) return false;
-    if (!Number.isInteger(data.width) || !Number.isInteger(data.height) || data.width < 1 || data.height < 1 || data.width > 640 || data.height > 360 || data.pixels?.length !== data.width * data.height * 4 || data.fill?.length !== data.pixels.length || !Array.isArray(data.instances) || data.instances.length > 8 || !Number.isFinite(data.at) || Date.now() - data.at >= 1200) return false;
+    if (!Number.isInteger(data.width) || !Number.isInteger(data.height) || data.width < 1 || data.height < 1 || data.width > 640 || data.height > 360 || data.pixels?.length !== data.width * data.height * 4 || data.fill?.length !== data.pixels.length || !Array.isArray(data.instances) || data.instances.length > MAX_PEOPLE || !Number.isFinite(data.at) || Date.now() - data.at >= 1200) return false;
     segmentationFrame = data; return true;
   });
   handle('preview', () => operator, () => Date.now() - (frame?.at || 0) < 2000 ? preview : '');

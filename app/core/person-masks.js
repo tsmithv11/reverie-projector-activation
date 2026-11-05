@@ -5,18 +5,18 @@ import { MAX_PEOPLE } from './person-tracker.js';
 export function describePerson(mask, pixels, width, height, landmarks = []) {
   let n = 0, sx = 0, sy = 0, top = height, left = width, right = 0, bottom = 0;
   for (let y = 0; y < height; y += 2) for (let x = 0; x < width; x += 2) {
-    if (mask[y * width + x] < .6) continue;
+    if (!(mask[y * width + x] >= .6)) continue;
     n++; sx += x; sy += y; top = Math.min(top, y); bottom = Math.max(bottom, y); left = Math.min(left, x); right = Math.max(right, x);
   }
   if (n < 20) return null;
-  const torso = [11, 12, 23, 24].map(i => landmarks[i]).filter(p => p && p.visibility > .5);
+  const torso = [11, 12, 23, 24].map(i => landmarks[i]).filter(p => p && p.visibility > .5 && Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1);
   const center = torso.length >= 2 ? { x: torso.reduce((s, p) => s + p.x, 0) / torso.length, y: torso.reduce((s, p) => s + p.y, 0) / torso.length } : { x: sx / n / width, y: sy / n / height };
   const mean = [0, 0, 0], squares = [0, 0, 0]; let samples = 0;
   const radiusX = Math.max(4, (right - left) * .22), radiusY = Math.max(4, (bottom - top) * .22);
   for (let y = Math.max(0, Math.floor(center.y * height - radiusY)); y < Math.min(height, center.y * height + radiusY); y += 3) {
     for (let x = Math.max(0, Math.floor(center.x * width - radiusX)); x < Math.min(width, center.x * width + radiusX); x += 3) {
       const i = y * width + x;
-      if (mask[i] < .85) continue;
+      if (!(mask[i] >= .85)) continue;
       samples++;
       for (let c = 0; c < 3; c++) { const value = pixels[i * 4 + c] / 255; mean[c] += value; squares[c] += value * value; }
     }

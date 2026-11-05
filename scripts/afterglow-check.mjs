@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 
 await mkdir('test-results', { recursive: true });
 const executablePath = process.env.REVERIE_EXECUTABLE;
+const expectedPeople = Number(process.env.AFTERGLOW_EXPECTED_PEOPLE ?? (process.env.AFTERGLOW_VIDEO ? 2 : 0));
+assert(Number.isInteger(expectedPeople) && expectedPeople >= 0 && expectedPeople <= 16);
 const args = [...(executablePath ? [] : ['.']), '--demo', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'];
 if (process.env.AFTERGLOW_VIDEO) args.push(`--use-file-for-fake-video-capture=${path.resolve(process.env.AFTERGLOW_VIDEO)}`);
 const app = await electron.launch({ executablePath, args, env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/afterglow-profile-${Date.now()}`) } });
@@ -59,14 +61,24 @@ try {
     const f = await installation.segmentation(-1);
     return f && { at: f.at, seq: f.seq, demo: f.demo, width: f.width, height: f.height, mirror: f.mirror, ms: f.ms, count: f.instances.length, tracks: f.instances.map(p => ({ id: p.id, color: p.color, x: p.x, y: p.y, segments: p.contour.length / 4 })), alpha: f.fill.filter((_, i) => i % 4 === 3).filter(a => a > 0).length };
   }));
+  const checkPeople = sample => {
+    assert.equal(sample.count, expectedPeople, 'fixture should have exactly the expected people, without duplicate or extra masks');
+    if (expectedPeople) {
+      assert(sample.alpha > 1000);
+      assert(sample.tracks.every(p => p.segments > 50));
+      assert.equal(new Set(sample.tracks.map(p => p.id)).size, expectedPeople);
+    } else assert.equal(sample.alpha, 0);
+  };
   await until(() => audience.evaluate(async () => (await installation.segmentation(-1))?.width === 640));
+  // New real tracks need two captures before becoming visible.
+  await until(() => audience.evaluate(async expected => (await installation.segmentation(-1))?.instances.length === expected, expectedPeople));
   const real = await collect();
   assert(real && !real.demo); assert(real.width === 640); assert(real.ms > 0);
-  if (process.env.AFTERGLOW_VIDEO) { assert(real.count >= 2, 'The people fixture must yield separate person masks'); assert(real.alpha > 1000); assert(real.tracks.every(p => p.segments > 50)); }
-  else { assert.equal(real.count, 0); assert.equal(real.alpha, 0); }
+  checkPeople(real);
   await wait(2000);
   const later = await collect();
   assert(later.seq > real.seq, 'inference must keep advancing');
+  checkPeople(later);
   if (process.env.AFTERGLOW_VIDEO) assert.deepEqual(later.tracks.map(p => [p.id, p.color]).sort(), real.tracks.map(p => [p.id, p.color]).sort());
   await audience.screenshot({ path: `test-results/afterglow-${process.env.AFTERGLOW_VIDEO ? 'live' : 'empty'}.png` });
   samples.push({ stage: 'local-model', ...later });
@@ -74,6 +86,14 @@ try {
   await until(() => audience.evaluate(async () => (await installation.segmentation(-1))?.mirror === false));
   await wait(1600);
   await audience.screenshot({ path: `test-results/afterglow-${process.env.AFTERGLOW_VIDEO ? 'live' : 'empty'}-4x3.png` });
+  for (const [quality, width] of [['low', 384], ['balanced', 512]]) {
+    await operator.evaluate(quality => installation.configure({ quality }), quality);
+    await until(() => audience.evaluate(async width => (await installation.segmentation(-1))?.width === width, width));
+    await wait(1000);
+    const sample = await collect(); checkPeople(sample);
+    assert.equal(sample.width, width);
+    samples.push({ stage: `local-model-${quality}`, ...sample });
+  }
 
   // The worker and held frame must be released when leaving the scene.
   await operator.evaluate(() => installation.command('select', 'words'));

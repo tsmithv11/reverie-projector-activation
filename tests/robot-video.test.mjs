@@ -67,7 +67,7 @@ test('Restyle input preserves face proportions at every shared-camera resolution
   }
 });
 
-test('Lucy 2.5 input still uses the full camera plane without cropping', async () => {
+test('Lucy Latest input still uses the full camera plane without cropping', async () => {
   const service = await videoService();
   assert.deepEqual(service.draws[0].slice(1), [0, 0, 1280, 720]);
   await service.stop();

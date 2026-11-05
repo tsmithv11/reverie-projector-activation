@@ -8,12 +8,14 @@ const { CloudGate } = require('../app/core/cloud-gate.cjs');
 const { robotStatus } = require('../app/core/robot-status.cjs');
 const { LIVE_SCENE_IDS, nextPlaylistScene } = require('../app/core/live-scenes.cjs');
 
-test('existing playlists gain restyles without changing their order or toggles', () => {
+test('existing playlists drop removed scenes and gain current scenes without changing remaining order or toggles', () => {
   const old = ['garden', 'cartoon', 'heat', 'robots', 'lines', 'monsters', 'words'].map(id => ({ id, enabled: id === 'garden' }));
-  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, ...['animation3d', 'cyberpunk', 'claymation', 'ghibli25', 'monstersLiving', 'afterglow'].map(id => ({ id, enabled: true }))]);
+  const saved = [...old];
+  saved.splice(2, 0, ...['animation3d', 'cyberpunk', 'claymation'].map(id => ({ id, enabled: true })));
+  assert.deepEqual(sanitize({ scenes: saved }).scenes, [...old, ...['ghibli25', 'monstersLiving', 'afterglow'].map(id => ({ id, enabled: true }))]);
 });
 
-test('the Lucy 2.5 Ghibli comparison appends to existing playlists and preserves saved choices', () => {
+test('the Lucy Latest Ghibli comparison retains its saved ID, playlist order and choices', () => {
   const old = sanitize().scenes.filter(scene => scene.id !== 'ghibli25').reverse()
     .map(scene => ({ ...scene, enabled: scene.id !== 'cartoon' }));
   const updated = sanitize({ scenes: old }).scenes;

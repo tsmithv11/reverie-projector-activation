@@ -1,14 +1,11 @@
 // Scene identity controls the model, token scope and operator label together.
 const CARTOON_PROMPT = 'Studio Ghibli watercolor style with gentle hand-painted colors and clean, restrained linework. Preserve each person\'s identity, facial proportions, eye and mouth positions, expression, and natural anatomy. Keep faces consistent from frame to frame as people move. Preserve the number of people, their positions, and the original composition. Apply the style mainly through color, shading, and texture.';
 const LIVE_SCENES = {
-  robots: { model: 'lucy-2.5', label: 'Lucy 2.5', prompt: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.' },
+  robots: { model: 'lucy-latest', label: 'Lucy Latest', selfAnchor: false, prompt: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.' },
   // Keep the existing cartoon ID so saved playlist order and toggles survive.
   cartoon: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: CARTOON_PROMPT },
-  animation3d: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: '3D animation style' },
-  cyberpunk: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: 'Cyberpunk neon anime style' },
-  claymation: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: 'Transform the entire scene into handcrafted claymation. Make every person, object, and background out of sculpted modeling clay, with visible fingerprints, soft rounded shapes, matte clay textures, and a stop-motion animation look. Preserve the original composition and movement.' },
-  // Separate comparison scene: retain the existing Restyle 2 Ghibli unchanged.
-  ghibli25: { model: 'lucy-2.5', label: 'Lucy 2.5', enhance: true, prompt: 'Restyle the entire scene as hand-drawn Japanese animation with watercolor backgrounds, soft painted colors, and clean character linework. Preserve each person\'s facial proportions, expression, pose, and movement.' }
+  // Keep the saved ghibli25 ID when upgrading the model; Restyle 2 stays separate.
+  ghibli25: { model: 'lucy-latest', label: 'Lucy Latest', selfAnchor: false, enhance: true, prompt: 'Restyle the entire scene as hand-drawn Japanese animation with watercolor backgrounds, soft painted colors, and clean character linework. Preserve each person\'s facial proportions, expression, pose, and movement.' }
 };
 const LIVE_SCENE_IDS = Object.keys(LIVE_SCENES);
 function liveScene(id) {

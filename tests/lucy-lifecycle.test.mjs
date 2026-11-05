@@ -105,7 +105,8 @@ test('Lucy starts off even if saved on, stays on past old limits, and resets onl
   app.step(120000); assert.equal(app.state().cloud.count, 0);
   app.configure({ robotEnabled: true, duration: 10 });
   const seen = Object.fromEntries(LIVE_SCENE_IDS.map(id => [id, 0])); let last;
-  for (let i = 0; i < 3000; i++) {
+  // Cover at least fourteen visits even as new local scenes join the playlist.
+  for (let i = 0; i < app.state().settings.scenes.length * 280; i++) {
     app.step(); const s = app.state();
     if (s.cloud.ready && s.active !== last && s.active in seen) seen[s.active]++;
     last = s.active;

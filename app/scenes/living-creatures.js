@@ -30,7 +30,7 @@ export class LivingCreature {
     this.cooldown = .25 + index * .13; this.nextIdle = 1.8 + this.random() * 5 + index * .3;
     this.nextLook = .8 + this.random() * 2; this.look = 0;
     this.nextBlink = .7 + this.random() * 4; this.blinkAge = -1; this.blinkDuration = .2;
-    this.blink = 0; this.social = null; this.lastReaction = -10; this.wakeDistance = 0;
+    this.blink = 0; this.social = null; this.lastReaction = -10; this.wakeDistance = 0; this.surfaceUntil = 0;
   }
 
   random() { this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0; return this.seed / 4294967296; }
@@ -97,7 +97,7 @@ export class LivingCreature {
     }
 
     let targetX = s.x + Math.sin(this.time * .43 + this.phase) * s.travel * .08;
-    let targetDepth = s.id === 'jumper' ? 1.12 : s.id === 'green' ? .24 : 0;
+    let targetDepth = s.id === 'jumper' && this.time > this.surfaceUntil ? 1.12 : s.id === 'green' ? .24 : 0;
     let targetLift = 0, targetSquash = 0, targetGesture = socialLook ? .16 : 0, targetLean = this.gaze * .025;
     const a = this.action;
     if (a) {
@@ -146,6 +146,7 @@ export class LivingCreature {
         }
       }
       if (p >= 1) {
+        if (a.kind === 'hop') this.surfaceUntil = this.time + 3.5 + this.random() * 2;
         this.action = null; this.completed++;
         this.cooldown = s.rest * (1 + this.random() * 1.5);
         this.nextIdle = this.time + 3 + this.random() * 7;

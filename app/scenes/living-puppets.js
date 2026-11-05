@@ -42,7 +42,7 @@ void main() {
   gl_Position = vec4(world.x / viewport.x * 2. - 1., 1. - world.y / viewport.y * 2., 0., 1.);
 }`;
 const fragment = `
-precision mediump float;
+precision highp float;
 uniform sampler2D artwork;
 uniform vec2 atlasSize;
 uniform vec4 eyeA, eyeB;

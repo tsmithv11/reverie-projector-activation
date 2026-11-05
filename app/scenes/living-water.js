@@ -11,16 +11,16 @@ export class LivingWater {
     const mass = Math.sqrt(spec.height / .26);
     const energy = clamp((speed * 2.4 + power * .35) * mass, .06, 1);
     const wake = kind === 'wake';
-    this.rings.push({ x, y, age: 0, radius: (.015 + energy * .055) * (wake ? .6 : 1),
+    this.rings.push({ id: spec.id, x, y, age: 0, radius: (.015 + energy * .055) * (wake ? .6 : 1),
       life: 1.6 + energy * 1.4, energy, wake, direction });
     this.rings = this.rings.slice(-36);
     if (!wake && energy > .18) {
-      this.crowns.push({ x, y, age: 0, energy, life: .42 + energy * .2 });
+      this.crowns.push({ id: spec.id, x, y, age: 0, energy, life: .42 + energy * .2 });
       this.crowns = this.crowns.slice(-8);
       const count = Math.ceil(4 + energy * 7);
       for (let i = 0; i < count; i++) {
         const fan = count > 1 ? i / (count-1) * 2 - 1 : 0;
-        this.drops.push({ x, y, floor: y, age: 0, vx: fan * (.025 + energy * .06),
+        this.drops.push({ id: spec.id, x, y, floor: y, age: 0, vx: fan * (.025 + energy * .06),
           vy: -(.05 + energy * .16) * (1 - Math.abs(fan) * .35), r: .001 + energy * .002,
           life: .45 + energy * .45 });
       }
@@ -61,7 +61,7 @@ export class LivingWater {
     ctx.restore();
   }
 
-  render(ctx, w, h) {
+  render(ctx, w, h, place = effect => effect) {
     ctx.save(); ctx.lineCap = 'round';
     for (const r of this.rings) {
       const p = r.age/r.life, expansion = 1 - Math.exp(-p*2.6);
@@ -70,26 +70,27 @@ export class LivingWater {
         ctx.globalAlpha = Math.sin(Math.min(1,p*9)*Math.PI/2) * (1-p)**2 * (.24 + r.energy*.5) * (ring ? .45 : 1);
         ctx.strokeStyle = ring ? '#a7b8ed' : '#ffe8f2'; ctx.lineWidth = Math.max(.65,w*.00085) * (1-p*.45);
         ctx.beginPath();
-        const x = r.x - (r.wake ? r.direction * p * .009 : 0);
-        ctx.ellipse(x*w,r.y*h,radius*w,radius*h*.23,0,r.wake ? (r.direction > 0 ? Math.PI*.3 : Math.PI*1.3) : 0,r.wake ? (r.direction > 0 ? Math.PI*1.7 : Math.PI*2.7) : TAU);
+        const position = place(r), x = position.x - (r.wake ? r.direction * p * .009 : 0);
+        ctx.ellipse(x*w,position.y*h,radius*w,radius*h*.23,0,r.wake ? (r.direction > 0 ? Math.PI*.3 : Math.PI*1.3) : 0,r.wake ? (r.direction > 0 ? Math.PI*1.7 : Math.PI*2.7) : TAU);
         ctx.stroke();
       }
     }
     for (const c of this.crowns) {
-      const p = c.age/c.life, radius = (.008 + p*.026)*(.4+c.energy);
+      const p = c.age/c.life, radius = (.008 + p*.026)*(.4+c.energy), position = place(c);
       const height = Math.sin(p*Math.PI)*.022*c.energy;
       ctx.globalAlpha = (1-p)*.56; ctx.fillStyle = '#e9e6ff'; ctx.beginPath();
-      ctx.moveTo((c.x-radius)*w,c.y*h);
+      ctx.moveTo((position.x-radius)*w,position.y*h);
       for (let i = 0; i <= 8; i++) {
-        const x = c.x-radius+radius*2*i/8;
-        ctx.quadraticCurveTo((x-radius*.12)*w,(c.y-height*(i%2 ? .4 : 1))*h,x*w,(c.y-height*(i%2 ? 1 : .2))*h);
+        const x = position.x-radius+radius*2*i/8;
+        ctx.quadraticCurveTo((x-radius*.12)*w,(position.y-height*(i%2 ? .4 : 1))*h,x*w,(position.y-height*(i%2 ? 1 : .2))*h);
       }
-      ctx.lineTo((c.x+radius)*w,c.y*h); ctx.closePath(); ctx.fill();
+      ctx.lineTo((position.x+radius)*w,position.y*h); ctx.closePath(); ctx.fill();
     }
     ctx.fillStyle = '#f2edff';
     for (const d of this.drops) {
       ctx.globalAlpha = Math.min(1,d.age*25)*(1-d.age/d.life)*.85;
-      ctx.beginPath(); ctx.ellipse(d.x*w,d.y*h,d.r*w,d.r*h*(1.3+Math.abs(d.vy)*4),-d.vx*5,0,TAU); ctx.fill();
+      const position = place(d);
+      ctx.beginPath(); ctx.ellipse(position.x*w,position.y*h,d.r*w,d.r*h*(1.3+Math.abs(d.vy)*4),-d.vx*5,0,TAU); ctx.fill();
     }
     ctx.restore();
   }

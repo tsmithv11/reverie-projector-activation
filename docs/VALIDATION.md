@@ -357,3 +357,13 @@ Changed only `ghibli25`'s portal rotation from −24° to 13°. The shallower an
 The composition rehearsal passed all eleven scenes in both formats, including gradient transitions, rapid reselection and resizing, without renderer errors. The larger opening was visually reviewed in 4:3 and 16:9. A geometry comparison checked 55 scene/size combinations, including portrait and small previews: every corner remains in bounds and the other ten scenes exactly match the previous build.
 
 The rebuilt Mac app passed strict deep signature verification. Its composition module, audience bundle and live-scene settings match the verified sources. The transfer ZIP and its SHA-256 checksum were refreshed and verified.
+
+## Small wonderful things · Living world — November 4, 2026
+
+Added `monstersLiving` as a separate twelfth scene. The original bay scene, pose animator, sprite loader, water shader and artwork are unchanged. The new version articulates a fixed painted drawing per character with a shared mesh, weighted head/arm/tail movement, independent blinks and spring-driven bodies. Independently scheduled idle behaviors include glances, neighbor reactions, peeking, swimming and submersion. Local movement blends into gestures, retreats and hops; travel and surface contact drive bounded wakes, ripples, splash crowns and droplets. The original motion-location bubbles and 120 ms gate remain.
+
+All 137 unit/regression tests passed, including continuity through motion reversals and camera loss, matching 30/60 fps simulations, independent idle timing, scene migration, effect scaling and bounded resources. The desktop rehearsal passed at 30 fps in High 16:9 and Low 4:3, and remained at 30 fps after camera loss with bubbles naturally expired. Switching to the original and back, WebGL loss with Canvas fallback, cleanup, and zero camera-image uploads all passed without renderer errors. Idle, blink, active, rock occlusion and both portal formats were visually inspected. Inputs were synthetic; physical projector/audience rehearsal remains venue-dependent.
+
+Evidence: `test-results/living-world-check.json`, `test-results/living-world-*.png`, and the 23-second idle/activity/settling preview at `test-results/living-world-preview.mp4`. Run `npm run test:living-world -- --record` to regenerate the WebM preview and checks.
+
+The Apple Silicon app and transfer ZIP were rebuilt using the installed Electron distribution. Strict deep signature verification passed. Packaged settings, composition, audience/operator bundles and styles match the tested files; private files and diagnostic fixtures are excluded. The transfer ZIP's SHA-256 checksum was refreshed and verified.

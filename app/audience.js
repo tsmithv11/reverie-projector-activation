@@ -18,7 +18,8 @@ artworkCanvas.width = artworkCanvas.height = 1;
 let state = await api.state(), latest = null, pulling = false, robotLatest = null, robotPulling = false, robotSeq = -1, robotSession = null, seq = -1;
 let last = 0, deadline = 0, frames = 0, lastReport = performance.now(), fps = 0, transitionAt = -10000, failure = '', activation = -1;
 let portal, portalKey, areaKey;
-const isArtworkScene = id => id === 'monsters' || id === 'garden';
+const isBayScene = id => id === 'monsters' || id === 'monstersLiving';
+const isArtworkScene = id => isBayScene(id) || id === 'garden';
 const adaptive = new AdaptiveQuality(), host = new SceneHost(registry, (id, phase) => { failure = `Scene ${id} failed during ${phase}; isolated fallback active`; });
 function receiveState(s) {
   // Refetch even the current packet when changing between analysis and video.
@@ -68,7 +69,7 @@ function renderCameraPortal(context) {
 }
 function renderArtworkPortal(context) {
   const { w, h } = context;
-  const landscape = state.active === 'monsters';
+  const landscape = isBayScene(state.active);
   paintBackground(ctx, w, h);
   ctx.save();
   if (!landscape) {
@@ -93,11 +94,11 @@ function finishComposition(w, h, cameraLive) {
   ctx.save();
   const cameraScene = ['heat', 'lines', 'words'].includes(state.active) || isLiveScene(state.active);
   const wash = reverieGradient(ctx, w, h, cameraScene ? .6 : 85 / 255, cameraScene ? .6 : 68 / 255);
-  if (cameraScene || state.active === 'monsters') { ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); polygonPath(ctx, portal.inner); ctx.fill('evenodd'); }
+  if (cameraScene || isBayScene(state.active)) { ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); polygonPath(ctx, portal.inner); ctx.fill('evenodd'); }
   const border = ctx.createLinearGradient(0, 0, w, h);
   border.addColorStop(0, REVERIE_PALETTE.pink); border.addColorStop(.5, REVERIE_PALETTE.orchid); border.addColorStop(1, REVERIE_PALETTE.lilac);
   ctx.fillStyle = border; ctx.beginPath(); polygonPath(ctx, portal.outer); polygonPath(ctx, portal.inner); ctx.fill('evenodd');
-  if (state.active !== 'monsters' && state.active !== 'garden' && state.active !== 'words') {
+  if (!isArtworkScene(state.active) && state.active !== 'words') {
     ctx.save(); ctx.beginPath(); polygonPath(ctx, portal.inner); ctx.clip();
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
     ctx.restore();

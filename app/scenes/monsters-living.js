@@ -97,12 +97,17 @@ export default class LivingMonsters extends Monsters {
     // Rebase green's ripples by the same offset as its body. The simulation and
     // the rest of the cast do not depend on the output's aspect ratio or rim.
     const green = this.creatures[1], gp = placement(green), dx = gp.x-green.x, dy = gp.waterline-green.spec.y;
-    for (const collection of [this.water.rings,this.water.crowns,this.water.drops]) for (const effect of collection) {
-      if (Math.abs(effect.y-green.spec.y)<1e-6 || effect.floor===green.spec.y) { effect.x+=dx; effect.y+=dy; effect.rebased=true; }
-    }
-    this.water.render(ctx,w,h);
-    for (const collection of [this.water.rings,this.water.crowns,this.water.drops]) for (const effect of collection) {
-      if (effect.rebased) { effect.x-=dx; effect.y-=dy; delete effect.rebased; }
+    this.water.render(ctx,w,h,effect => effect.id === 'green' ? {x:effect.x+dx,y:effect.y+dy} : effect);
+    // A broken meniscus and a soft contact shadow join the painted body to the
+    // rolling surface. Both shrink away during takeoff and submersion.
+    for (const c of this.creatures) {
+      const p = placement(c), contact = clamp(1-p.depth*1.5)*clamp(1-p.lift/.025);
+      if (contact<=0) continue;
+      const size=c.spec.height*h, y=(p.waterline ?? c.spec.y)*h;
+      ctx.save(); ctx.globalAlpha=contact*.14;ctx.fillStyle='#6a6caf';
+      ctx.beginPath();ctx.ellipse(p.x*w,y+1,size*.32,h*.004,0,0,TAU);ctx.fill();
+      ctx.globalAlpha=contact*.65;ctx.strokeStyle='#ffe7f3';ctx.lineWidth=Math.max(.7,w*.001);ctx.lineCap='round';
+      ctx.beginPath();ctx.ellipse(p.x*w,y,size*.32,h*.004,0,.1,Math.PI-.1);ctx.stroke();ctx.restore();
     }
     for (const bubble of this.bubbles) this.drawBubble(ctx,bubble,w,h);
     ctx.restore();

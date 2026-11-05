@@ -1,13 +1,19 @@
 import { decartModel, openDecartConnection } from './core/decart-connection.js';
 import { openLucySignaling } from './core/lucy-signaling.js';
 import { usableDimensions, usablePixels } from './core/robot-result.js';
-import { liveScene } from './core/live-scenes.cjs';
 import { coverRect } from './core/display.js';
 // This isolated service sends current camera frames and publishes current Lucy
 // video frames. There is no snapshot, JPEG cache, or substitute robot drawing.
 const api = window.installation;
 let connection, peer, stream, remote, done = false, offered = false, pendingICE = [], grace, inputTimer, watchdog;
-let job, closing, inputSeq = -1, outputSeq = 0, inputBusy = false, lastInput = Date.now(), lastOutput = 0, rejectedOutput = 0;
+let job, closing, pendingPrompt, inputSeq = -1, outputSeq = 0, inputBusy = false, lastInput = Date.now(), lastOutput = 0, rejectedOutput = 0;
+api.onPrompt(update => {
+  if (done) return;
+  pendingPrompt = update;
+  if (job?.id !== update.id || job.sceneId !== 'customRestyle') return;
+  job.prompt = update.prompt;
+  connection?.setPrompt(update.prompt);
+});
 function close() {
   if (closing) return closing;
   done = true; clearTimeout(grace); clearInterval(inputTimer); clearInterval(watchdog);
@@ -83,6 +89,7 @@ async function receive(message) {
 }
 try {
   job = await api.job(); if (!job || done) throw Error('No session');
+  if (job.sceneId === 'customRestyle' && pendingPrompt?.id === job.id) job.prompt = pendingPrompt.prompt;
   if (job.provider !== 'decart') throw Error('These audience scenes require direct Decart');
   const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
   const model = decartModel(job.sceneId);
@@ -112,10 +119,10 @@ try {
   api.stage('authenticating');
   const token = await api.token(); if (!token || done) throw Error('Authentication failed');
   api.stage('signaling');
-  const { prompt } = liveScene(job.sceneId);
+  const { prompt } = job;
   if (job.provider === 'decart') {
     api.stage('connecting-video');
-    connection = openDecartConnection({ token, stream, sceneId: job.sceneId, onRemoteStream: receiveStream, onError: fail, onStage: phase => api.stage(phase) });
+    connection = openDecartConnection({ token, stream, sceneId: job.sceneId, prompt, onRemoteStream: receiveStream, onError: fail, onStage: phase => api.stage(phase) });
   } else connection = openLucySignaling({ token,
     input: { prompt, enable_prompt_expansion: false },
     onResult: receive, onError: detail => fail('SIGNALING', detail),

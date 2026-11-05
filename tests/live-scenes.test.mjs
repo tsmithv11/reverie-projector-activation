@@ -6,13 +6,26 @@ const { sanitize } = require('../app/core/settings.cjs');
 const { Scheduler } = require('../app/core/scheduler.cjs');
 const { CloudGate } = require('../app/core/cloud-gate.cjs');
 const { robotStatus } = require('../app/core/robot-status.cjs');
-const { LIVE_SCENE_IDS, nextPlaylistScene } = require('../app/core/live-scenes.cjs');
+const { LIVE_SCENE_IDS, CUSTOM_RESTYLE_PROMPT, liveScene, nextPlaylistScene } = require('../app/core/live-scenes.cjs');
 
 test('existing playlists drop removed scenes and gain current scenes without changing remaining order or toggles', () => {
   const old = ['garden', 'cartoon', 'heat', 'robots', 'lines', 'monsters', 'words'].map(id => ({ id, enabled: id === 'garden' }));
   const saved = [...old];
   saved.splice(2, 0, ...['animation3d', 'cyberpunk', 'claymation'].map(id => ({ id, enabled: true })));
-  assert.deepEqual(sanitize({ scenes: saved }).scenes, [...old, ...['ghibli25', 'monstersLiving', 'afterglow'].map(id => ({ id, enabled: true }))]);
+  assert.deepEqual(sanitize({ scenes: saved }).scenes, [...old, ...['ghibli25', 'monstersLiving', 'afterglow', 'customRestyle'].map(id => ({ id, enabled: true }))]);
+});
+
+test('custom restyle appends to saved playlists and accepts arbitrary prompt text with a safe default', () => {
+  const old = sanitize().scenes.filter(scene => scene.id !== 'customRestyle').reverse();
+  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, { id: 'customRestyle', enabled: true }]);
+  assert.equal(liveScene('customRestyle').model, 'lucy-restyle-2');
+  assert.equal(CUSTOM_RESTYLE_PROMPT, 'Cyberpunk neon anime style');
+  for (const value of [undefined, null, '', ' \n ', 42, {}]) assert.equal(sanitize({ customRestylePrompt: value }).customRestylePrompt, CUSTOM_RESTYLE_PROMPT);
+  const prompt = '水彩画 — luminous blue flowers\nKeep the room and people. <neon> & stars';
+  const saved = sanitize({ customRestylePrompt: `  ${prompt}  ` });
+  assert.equal(saved.customRestylePrompt, prompt);
+  assert.equal(sanitize(JSON.parse(JSON.stringify(saved))).customRestylePrompt, prompt);
+  assert.equal(sanitize({ customRestylePrompt: 'x'.repeat(6000) }).customRestylePrompt.length, 6000, 'Never silently truncate a prompt');
 });
 
 test('the Lucy Latest Ghibli comparison retains its saved ID, playlist order and choices', () => {

@@ -92,12 +92,55 @@ async function installation(saved = {}, keys = { decart: 'fake-key' }) {
   }
   feed(false);
   return { state, step, close, windows, app,
+    job: () => call('robot', 'robot-job'),
     configure: patch => call('operator', 'configure', patch),
     command: (name, value) => call('operator', 'command', name, value),
     fail: (code = 'SESSION_BUSY') => emit('robot', 'robot-result', { code }),
     get saved() { return JSON.parse(files.get('settings.json')); }
   };
 }
+
+test('custom restyle saves and updates its prompt without connecting while disabled or extending playback', async () => {
+  const app = await installation();
+  app.configure({ customRestylePrompt: 'Ink and paper\n星空', duration: 10 });
+  app.command('select', 'customRestyle'); app.step();
+  assert.equal(app.state().cloud.count, 0);
+  assert.equal(app.saved.customRestylePrompt, 'Ink and paper\n星空');
+  app.configure({ robotEnabled: true }); app.command('select', 'customRestyle');
+  const firstId = app.job().id;
+  assert.equal(app.job().prompt, 'Ink and paper\n星空');
+  app.configure({ customRestylePrompt: 'Clay sculpture' });
+  assert.equal(app.job().prompt, 'Clay sculpture', 'Edits during setup reach the current job');
+  app.step(); app.command('pause'); app.step(8000);
+  const remaining = app.state().cloud.secondsLeft;
+  app.configure({ customRestylePrompt: 'Dreamy pastel city' });
+  assert.equal(app.job().id, firstId);
+  assert.equal(app.state().cloud.count, 1);
+  assert.equal(app.state().cloud.secondsLeft, remaining);
+  const message = app.windows.findLast(w => w.role === 'robot').messages.findLast(m => m.name === 'robot-prompt');
+  assert.equal(message.data.id, firstId); assert.equal(message.data.prompt, 'Dreamy pastel city');
+  assert(!app.state().logs.some(line => line.includes('Dreamy pastel city')));
+  app.step(3000);
+  assert(!app.state().cloud.streaming);
+  app.command('select', 'customRestyle');
+  assert.equal(app.job().prompt, 'Dreamy pastel city');
+  app.configure({ robotEnabled: false }); app.close(); app.step(60000);
+  assert(!app.state().cloud.streaming); assert.equal(app.state().cloud.count, 2);
+  const relaunched = await installation(app.saved);
+  assert.equal(relaunched.state().settings.customRestylePrompt, 'Dreamy pastel city');
+  assert.equal(relaunched.state().settings.robotEnabled, false);
+});
+
+test('custom prompt edits leave the other live scenes unchanged', async () => {
+  const app = await installation();
+  app.configure({ robotEnabled: true }); app.command('select', 'cartoon'); app.step();
+  const prompt = app.job().prompt;
+  app.configure({ customRestylePrompt: 'Oil painting' });
+  assert.equal(app.job().prompt, prompt);
+  assert(!app.windows.findLast(w => w.role === 'robot').messages.some(m => m.name === 'robot-prompt'));
+  app.command('select', 'customRestyle'); app.close(); app.step();
+  assert.equal(app.job().prompt, 'Oil painting');
+});
 
 test('Lucy starts off even if saved on, stays on past old limits, and resets only on relaunch', async () => {
   const app = await installation({ robotEnabled: true, robotMinutes: 60, robotSessionCap: 1 });

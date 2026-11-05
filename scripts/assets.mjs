@@ -1,7 +1,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 await mkdir('assets/models', { recursive: true });
-for (const [manifestPath, file] of [['assets/model-manifest.json', 'efficientdet_lite0.tflite'], ['assets/segmentation-model-manifest.json', 'pose_landmarker_full.task']]) {
+for (const [manifestPath, file] of [['assets/model-manifest.json', 'efficientdet_lite0.tflite'], ['assets/segmentation-model-manifest.json', 'pose_landmarker_full.task'], ['assets/portrait-model-manifest.json', 'selfie_segmenter.tflite']]) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const valid = bytes => bytes.length === manifest.bytes && createHash('sha256').update(bytes).digest('hex') === manifest.sha256;
   const target = `assets/models/${file}`;

@@ -12,7 +12,7 @@ await writeFile(html, (await readFile('dist/audience.html', 'utf8')).replace('sr
 await writeFile(bootstrap, `
   let now = performance.now() + 2000, callback, receiver, seq = 0;
   const state = { active: 'heat', activation: 0, settings: { displayFormat: '4:3', quality: 'high', intensity: .7 },
-    cloud: { sessionId: 'synthetic', ready: true, sceneId: 'heat' }, scenes: [] };
+    cloud: { sessionId: 'synthetic', ready: true, sceneId: 'heat' }, camera: {}, scenes: [] };
   const source = document.createElement('canvas'); source.width = 320; source.height = 180;
   const ctx = source.getContext('2d');
   const gradient = ctx.createLinearGradient(0, 0, 320, 180);
@@ -64,7 +64,8 @@ try {
   app = await electron.launch({ args: [main] });
   const page = await app.firstWindow();
   page.on('pageerror', error => errors.push(error.message));
-  await page.waitForFunction(() => window.fixtureReady);
+  // The fixture owns requestAnimationFrame, so readiness must poll on a timer.
+  await page.waitForFunction(() => window.fixtureReady, null, { polling: 100 });
   await page.setViewportSize({ width: 960, height: 720 });
   await page.evaluate(() => fixture.step(0));
   assert.equal(await page.evaluate(() => fixture.error(fixture.pixels(), fixture.gradient())), 0, 'startup must begin with the gradient');
@@ -74,7 +75,7 @@ try {
     await page.setViewportSize({ width: format === '4:3' ? 960 : 1280, height: 720 });
     await page.evaluate(format => fixture.format(format), format);
     await page.evaluate(() => fixture.step(100));
-    for (const id of ['heat', 'robots', 'monsters', 'lines', 'garden', 'cartoon', 'words', 'ghibli25']) {
+    for (const id of ['heat', 'robots', 'monsters', 'lines', 'garden', 'cartoon', 'words', 'ghibli25', 'customRestyle']) {
       await page.evaluate(id => fixture.select(id), id);
       await page.evaluate(() => fixture.step(100));
       await page.evaluate(() => { window.outgoing = fixture.pixels(); });

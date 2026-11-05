@@ -71,8 +71,9 @@ export function ownDecartTransports(scope, onError) {
   };
 }
 
-export function openDecartConnection({ token, stream, sceneId, onRemoteStream, onError, onStage }) {
+export function openDecartConnection({ token, stream, sceneId, prompt = liveScene(sceneId).prompt, onRemoteStream, onError, onStage }) {
   const scene = liveScene(sceneId), model = decartModel(sceneId);
+  const initialPrompt = prompt;
   let realtime, stopped = false, connected = false;
   const transports = ownDecartTransports(globalThis, (code, detail) => { if (!stopped) onError(code, safeDiagnostic(detail, token)); });
   const client = createDecartClient({ apiKey: token, telemetry: false, logger: quietLogger });
@@ -82,12 +83,21 @@ export function openDecartConnection({ token, stream, sceneId, onRemoteStream, o
     const { code, detail } = decartFailure(error, token);
     onError(code, detail);
   };
+  // Keep just the latest edit during setup. Updating the prompt must never
+  // reconnect or extend the scene's existing playback deadline.
+  const setPrompt = text => {
+    if (stopped) return;
+    prompt = text;
+    if (realtime) Promise.resolve().then(() => {
+      if (!stopped) return realtime.setPrompt(prompt, { enhance: scene.enhance === true });
+    }).catch(failed);
+  };
   client.realtime.connect(stream, {
     model, mirror: false, retries: 0,
     // Keep changing audiences anchored to live input even as lucy-latest advances.
     // Restyle 2 does not expose this setting; only opted-in scenes send it.
     ...(scene.selfAnchor === false ? { queryParams: { self_anchor: 'false' } } : {}),
-    initialState: { prompt: { text: scene.prompt, enhance: scene.enhance === true } },
+    initialState: { prompt: { text: initialPrompt, enhance: scene.enhance === true } },
     onRemoteStream: remote => { if (!stopped) onRemoteStream(remote); else remote.getTracks().forEach(track => track.stop()); },
     onConnectionChange: state => {
       if (stopped) return;
@@ -102,6 +112,7 @@ export function openDecartConnection({ token, stream, sceneId, onRemoteStream, o
     if (stopped) { realtime.disconnect(); return; }
     realtime.on('error', failed);
     realtime.on('sessionEnded', event => failed({ message: event.reason }));
+    if (prompt !== initialPrompt) setPrompt(prompt);
   }).catch(failed);
-  return { close };
+  return { close, setPrompt };
 }

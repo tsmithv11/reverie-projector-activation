@@ -14,3 +14,6 @@
 .scene-art.ghibli25{background:linear-gradient(130deg,#dce8cb,#8bb9bd)}.scene-art.ghibli25 span{color:#374e61}
 
 .scene-art.afterglow{background:linear-gradient(135deg,#24152F,#433756)}.scene-art.afterglow:before{border-color:#FAA0D080}.scene-art.afterglow span{color:#FAA0D0;text-shadow:0 0 14px #FAA0D0,14px 3px 0 #7A9DDA,-14px 3px 0 #C49ED8}
+
+.scene-art.customRestyle{background:linear-gradient(135deg,#24152F,#7858ae 55%,#FAA0D0)}.scene-art.customRestyle span{color:#8ee9ef;text-shadow:0 0 16px #8ee9ef}
+#custom-restyle-prompt{display:block;width:100%;min-height:90px;padding:10px;resize:vertical;font:inherit;font-size:12px;line-height:1.5;color:#3a3044;background:#fff;border:1px solid #ded7e1;border-radius:7px}#custom-restyle-prompt:focus-visible{outline:2px solid #7858ae;outline-offset:3px}

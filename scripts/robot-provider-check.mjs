@@ -7,6 +7,7 @@ import { SCENES } from '../app/core/settings.cjs';
 const sceneId = process.argv.find(arg => arg.startsWith('--scene='))?.slice(8) || (process.argv.includes('--cartoon') ? 'cartoon' : 'robots');
 const prompts = { robots: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.', cartoon: CARTOON_PROMPT };
 prompts.ghibli25 = liveScene('ghibli25').prompt;
+prompts.customRestyle = liveScene('customRestyle').prompt;
 assert(sceneId in prompts, 'Unknown test scene');
 const expectedModel = ['robots', 'ghibli25'].includes(sceneId) ? 'lucy-latest' : 'lucy-restyle-2';
 const scenarios = ['missing-keys', 'fal-only', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live', 'decart-prompt-rejected'];
@@ -15,7 +16,7 @@ assert(!requestedScenario || scenarios.includes(requestedScenario), 'Unknown tes
 for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
   const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/providers-${scenario}-${Date.now()}`) } });
   const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 30000);
-  let sockets = 0, closed = false, promptReceived = false;
+  let sockets = 0, closed = false, promptReceived = false, expectedPrompt = prompts[sceneId];
   const errors = [];
   app.on('window', page => page.on('pageerror', error => errors.push(error.message)));
   try {
@@ -36,7 +37,7 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
       ws.onMessage(message => {
         const data = JSON.parse(String(message));
         if (data.type === 'prompt') {
-          assert.equal(data.prompt, prompts[sceneId]);
+          assert.equal(data.prompt, expectedPrompt);
           assert.equal(data.enhance_prompt, sceneId === 'ghibli25');
           promptReceived = true;
           if (scenario === 'cancel-fallback') ws.send(JSON.stringify({ type: 'error', error: 'Service unavailable' }));
@@ -87,7 +88,14 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
       await waitState(state => state.camera.width === 480);
       assert.equal(await operator.locator('.scene-card').count(), SCENES.length);
       assert.equal(await operator.locator('#live-scene option').count(), LIVE_SCENE_IDS.length);
+      if (sceneId === 'customRestyle') {
+        assert.equal(await operator.locator('#custom-restyle-prompt').inputValue(), prompts.customRestyle);
+        expectedPrompt = 'Luminous paper lanterns\nWatercolor and ink';
+        await operator.fill('#custom-restyle-prompt', expectedPrompt);
+        await operator.locator('#custom-restyle-prompt').blur();
+      }
       await operator.selectOption('#live-scene', sceneId);
+      if (sceneId === 'customRestyle') await waitState(state => state.settings.customRestylePrompt === expectedPrompt);
       await operator.click('#generate-robot');
     }
     if (scenario === 'cancel-fallback') {
@@ -119,6 +127,15 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
       assert.match(live.cloud.display, expectedModel === 'lucy-latest' ? /Lucy Latest/ : /Lucy Restyle 2/);
       assert(promptReceived, 'The SDK must send the configured prompt and enhancement setting');
       if (sceneId === 'ghibli25') await operator.screenshot({ path: 'test-results/ghibli25-operator.png', fullPage: true });
+      if (sceneId === 'customRestyle') {
+        await operator.fill('#custom-restyle-prompt', 'Neon origami city');
+        await operator.locator('#custom-restyle-prompt').blur();
+        await waitState(state => state.settings.customRestylePrompt === 'Neon origami city');
+        assert.equal((await robot.evaluate(() => window.installation.job())).prompt, 'Neon origami city');
+        assert.equal((await operator.evaluate(() => window.installation.state())).cloud.count, 1);
+        await operator.screenshot({ path: 'test-results/custom-restyle-operator.png', fullPage: true });
+        await operator.locator('#cloud-enabled').uncheck();
+      }
       await operator.evaluate(() => window.installation.command('select', 'heat'));
     }
     await waitState(state => !state.cloud.streaming && !state.cloud.closing);

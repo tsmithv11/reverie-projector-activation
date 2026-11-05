@@ -166,6 +166,40 @@ test('Decart forwards nested failures from both connect rejection and emitted SD
   }
 });
 
+test('custom prompts reach Decart during setup and live playback without reconnecting, and stop after cleanup', async () => {
+  const source = readFileSync(new URL('../app/core/decart-connection.js', import.meta.url), 'utf8')
+    .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+  const updates = [], failures = [];
+  let options, resolveConnect, connections = 0;
+  const context = vm.createContext({
+    WebSocket: Socket, RTCPeerConnection: Peer, setTimeout, clearTimeout, liveScene, safeDiagnostic,
+    models: { realtime: name => ({ name }) },
+    createDecartClient: () => ({ realtime: { connect: (_, value) => {
+      connections++; options = value; return new Promise(resolve => { resolveConnect = resolve; });
+    } } })
+  });
+  const open = vm.runInContext(`${source}\nopenDecartConnection`, context);
+  const connection = open({ token: 'test-token', sceneId: 'customRestyle', prompt: 'Paper cutouts', stream: {},
+    onError: (...args) => failures.push(args), onRemoteStream() {}, onStage() {} });
+  assert.equal(options.initialState.prompt.text, 'Paper cutouts');
+  assert.equal(options.initialState.prompt.enhance, false);
+  connection.setPrompt('First edit'); connection.setPrompt('Latest edit');
+  assert.equal(updates.length, 0);
+  resolveConnect({ on() {}, disconnect() {}, async setPrompt(text, { enhance }) {
+    updates.push([text, enhance]);
+    if (text === 'Rejected') throw Error('Prompt update failed');
+  } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(updates, [['Latest edit', false]]);
+  connection.setPrompt('Watercolor'); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(updates.at(-1), ['Watercolor', false]); assert.equal(connections, 1);
+  connection.setPrompt('Rejected'); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(failures, [['PROVIDER_ERROR', 'Prompt update failed']]);
+  connection.setPrompt('Cancelled'); await connection.close(); connection.setPrompt('After close');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(updates.length, 3);
+});
+
 test('Decart pending-connect cleanup closes all transports and prevents late SDK reconnects', async () => {
   const scope = { WebSocket: Socket, RTCPeerConnection: Peer }, errors = [];
   const transport = ownDecartTransports(scope, (...error) => errors.push(error));

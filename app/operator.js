@@ -1,7 +1,7 @@
 import { isLiveScene, liveScene } from './core/live-scenes.cjs';
 const api = window.installation, $ = id => document.getElementById(id);
 let state = await api.state(), signature = '', deviceSignature = '';
-const icons = { afterglow: '◉', heat: '⌗', robots: '♙', monsters: '☁', monstersLiving: '☁', lines: '⌖', garden: '✳', cartoon: '✎', words: 'Reverie 2026', ghibli25: '✎' };
+const icons = { afterglow: '◉', heat: '⌗', robots: '♙', monsters: '☁', monstersLiving: '☁', lines: '⌖', garden: '✳', cartoon: '✎', words: 'Reverie 2026', ghibli25: '✎', customRestyle: '✧' };
 async function configure(patch) { try { state = await api.configure(patch); render(state); } catch { $('notice').textContent = 'Could not save settings. Check that the settings folder is writable.'; } }
 function sceneList(s) {
   const key = JSON.stringify(s.settings.scenes); if (key === signature) return; signature = key;
@@ -37,6 +37,7 @@ function render(s) {
   $('output-offsets').hidden = $('output-offset-hint').hidden = $('output-width-controls').hidden = !wallOutput;
   for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).checked = s.settings[key];
   if (document.activeElement !== $('intensity')) $('intensity').value = Math.round(s.settings.intensity * 100);
+  if (document.activeElement !== $('custom-restyle-prompt')) $('custom-restyle-prompt').value = s.settings.customRestylePrompt;
   $('intensity-value').textContent = `${Math.round(s.settings.intensity * 100)}%`;
   const sceneIndex = s.scenes.findIndex(x => x.id === s.active), scene = s.scenes[sceneIndex];
   $('active-name').textContent = scene?.name || 'Waiting for an available scene';
@@ -70,6 +71,7 @@ function render(s) {
 api.onState(render); render(state);
 for (const [id, name] of [['generate-robot','generate-robot'],['output','output'],['pause','pause'],['next','next'],['fullscreen','fullscreen'],['reconnect','reconnect'],['logs','logs'],['quit','quit']]) $(id).onclick = () => api.command(name === 'generate-robot' ? (state.cloud.streaming || state.cloud.closing ? 'stop-robot' : state.cloud.canRetry ? 'retry-robot' : name) : name, name === 'generate-robot' ? $('live-scene').value : undefined);
 $('live-scene').onchange = () => { if (state.cloud.streaming && $('live-scene').value !== state.cloud.sceneId) api.command('select', $('live-scene').value); else render(state); };
+$('custom-restyle-prompt').onchange = () => configure({ customRestylePrompt: $('custom-restyle-prompt').value });
 for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['display-format','displayFormat'],['quality','quality']]) $(id).onchange = () => configure({ [key]: $(id).value });
 for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).onchange = () => configure({ [key]: $(id).checked });
 $('output-mapping').onchange = () => configure({ outputMapping: $('output-mapping').value, ...($('output-mapping').value === 'wall-1392' ? { displayFormat: '4:3' } : {}) });

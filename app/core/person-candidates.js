@@ -2,6 +2,8 @@ import { describePerson } from './person-masks.js';
 import { MAX_PEOPLE } from './person-tracker.js';
 
 const BODY_POINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+const HEAD_POINTS = [0, 2, 5, 7, 8];
+const POSE_POINTS = [...new Set([...HEAD_POINTS, ...BODY_POINTS])];
 const TORSO_POINTS = [11, 12, 23, 24];
 const BONES = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28]];
 const reliable = p => p && Number.isFinite(p.x) && Number.isFinite(p.y) &&
@@ -17,14 +19,18 @@ function onForeground(p, mask, width, height) {
   return false;
 }
 
-// A mask alone is not person evidence. Accept a visible upper OR lower body;
-// never demand a face, upright stance, or all 33 landmarks from cropped people.
+// A mask alone is not person evidence. A coherent head and shoulder can also
+// establish a cropped person; elbows and hips may legitimately be off camera.
 export function describePose(mask, pixels, width, height, landmarks = []) {
-  const supported = new Set(BODY_POINTS.filter(i => reliable(landmarks[i]) && onForeground(landmarks[i], mask, width, height)));
-  if (supported.size < 4 || TORSO_POINTS.filter(i => supported.has(i)).length < 2) return null;
+  const supported = new Set(POSE_POINTS.filter(i => reliable(landmarks[i]) && onForeground(landmarks[i], mask, width, height)));
+  const separation = (a, b) => Math.hypot((landmarks[a].x - landmarks[b].x) * width, (landmarks[a].y - landmarks[b].y) * height);
   const bones = BONES.filter(([a, b]) => supported.has(a) && supported.has(b) &&
-    Math.hypot((landmarks[a].x - landmarks[b].x) * width, (landmarks[a].y - landmarks[b].y) * height) >= 3);
-  if (bones.length < 2) return null;
+    separation(a, b) >= 3);
+  const body = BODY_POINTS.filter(i => supported.has(i)).length >= 4 && TORSO_POINTS.filter(i => supported.has(i)).length >= 2 && bones.length >= 2;
+  const left = [2, 7].find(i => supported.has(i)), right = [5, 8].find(i => supported.has(i));
+  const portrait = supported.has(0) && left !== undefined && right !== undefined && separation(left, right) >= 3 &&
+    [11, 12].some(i => supported.has(i) && separation(0, i) >= 6);
+  if (!body && !portrait) return null;
   const description = describePerson(mask, pixels, width, height, landmarks.map((p, i) => supported.has(i) ? p : undefined));
   if (!description) return null;
   return { ...description, quality: [...supported].reduce((sum, i) => sum + landmarks[i].visibility, 0) / supported.size };
@@ -42,7 +48,7 @@ function duplicate(a, b, width, height) {
   if (intersection / Math.min(areaA, areaB) < .8) return false;
   let common = 0, close = 0;
   const tolerance = Math.max(2, Math.sqrt(Math.min(areaA, areaB) * 4) * .06);
-  for (const i of BODY_POINTS) {
+  for (const i of POSE_POINTS) {
     const p = a.landmarks[i], q = b.landmarks[i];
     if (!reliable(p) || !reliable(q)) continue;
     common++;
@@ -50,6 +56,10 @@ function duplicate(a, b, width, height) {
   }
   // Overlapping neighbors remain separate unless their actual joints coincide.
   return common >= 4 && close / common >= .75;
+}
+
+export function hasFullBodyEvidence(candidate, width, height) {
+  return [25, 26, 27, 28].filter(i => reliable(candidate.landmarks[i]) && onForeground(candidate.landmarks[i], candidate.mask, width, height)).length >= 3;
 }
 
 export function selectPersonCandidates(candidates, width, height) {

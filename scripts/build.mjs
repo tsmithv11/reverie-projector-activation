@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 import { mkdir, cp, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-for (const [manifestPath, file] of [['assets/model-manifest.json', 'efficientdet_lite0.tflite'], ['assets/segmentation-model-manifest.json', 'pose_landmarker_full.task']]) {
+for (const [manifestPath, file] of [['assets/model-manifest.json', 'efficientdet_lite0.tflite'], ['assets/segmentation-model-manifest.json', 'pose_landmarker_full.task'], ['assets/portrait-model-manifest.json', 'selfie_segmenter.tflite']]) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const bytes = await readFile(`assets/models/${file}`).catch(() => { throw Error('Run npm run assets once online before building.'); });
   if (bytes.length !== manifest.bytes || createHash('sha256').update(bytes).digest('hex') !== manifest.sha256) throw Error(`Offline model verification failed: ${file}. Run npm run assets to restore it.`);
@@ -18,6 +18,7 @@ await cp('assets/models', 'dist/models', { recursive: true });
 await cp('assets/scenes', 'dist/scenes', { recursive: true, filter: source => !source.endsWith('provenance.json') });
 await cp('assets/model-manifest.json', 'dist/models/manifest.json');
 await cp('assets/segmentation-model-manifest.json', 'dist/models/segmentation-manifest.json');
+await cp('assets/portrait-model-manifest.json', 'dist/models/portrait-manifest.json');
 await cp('THIRD_PARTY_NOTICES.md', 'dist/THIRD_PARTY_NOTICES.md');
 await cp('assets/MEDIAPIPE-LICENSE.txt', 'dist/MEDIAPIPE-LICENSE.txt');
 console.log('Built desktop windows, workers and offline vision assets.');

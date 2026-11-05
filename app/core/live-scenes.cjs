@@ -1,11 +1,14 @@
 // Scene identity controls the model, token scope and operator label together.
+const CUSTOM_RESTYLE_PROMPT = 'Cyberpunk neon anime style';
+const customRestylePrompt = value => typeof value === 'string' && value.trim() ? value.trim() : CUSTOM_RESTYLE_PROMPT;
 const CARTOON_PROMPT = 'Studio Ghibli watercolor style with gentle hand-painted colors and clean, restrained linework. Preserve each person\'s identity, facial proportions, eye and mouth positions, expression, and natural anatomy. Keep faces consistent from frame to frame as people move. Preserve the number of people, their positions, and the original composition. Apply the style mainly through color, shading, and texture.';
 const LIVE_SCENES = {
   robots: { model: 'lucy-latest', label: 'Lucy Latest', selfAnchor: false, prompt: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.' },
   // Keep the existing cartoon ID so saved playlist order and toggles survive.
   cartoon: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: CARTOON_PROMPT },
   // Keep the saved ghibli25 ID when upgrading the model; Restyle 2 stays separate.
-  ghibli25: { model: 'lucy-latest', label: 'Lucy Latest', selfAnchor: false, enhance: true, prompt: 'Restyle the entire scene as hand-drawn Japanese animation with watercolor backgrounds, soft painted colors, and clean character linework. Preserve each person\'s facial proportions, expression, pose, and movement.' }
+  ghibli25: { model: 'lucy-latest', label: 'Lucy Latest', selfAnchor: false, enhance: true, prompt: 'Restyle the entire scene as hand-drawn Japanese animation with watercolor backgrounds, soft painted colors, and clean character linework. Preserve each person\'s facial proportions, expression, pose, and movement.' },
+  customRestyle: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: CUSTOM_RESTYLE_PROMPT }
 };
 const LIVE_SCENE_IDS = Object.keys(LIVE_SCENES);
 function liveScene(id) {
@@ -19,4 +22,4 @@ function nextPlaylistScene(scheduler, lucyEnabled) {
   const ids = scheduler.enabled(true).filter(id => lucyEnabled || !isLiveScene(id));
   return ids[(ids.indexOf(scheduler.active) + 1) % ids.length] || null;
 }
-module.exports = { LIVE_SCENE_IDS, CARTOON_PROMPT, liveScene, isLiveScene, liveSceneEnabled, nextPlaylistScene };
+module.exports = { LIVE_SCENE_IDS, CARTOON_PROMPT, CUSTOM_RESTYLE_PROMPT, customRestylePrompt, liveScene, isLiveScene, liveSceneEnabled, nextPlaylistScene };

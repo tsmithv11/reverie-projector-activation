@@ -1,3 +1,4 @@
+const { CUSTOM_RESTYLE_PROMPT, customRestylePrompt } = require('./live-scenes.cjs');
 const SCENES = [
   { id: 'heat', name: 'Audience / field study', color: '#f18c52' },
   { id: 'robots', name: 'Machine dreaming', color: '#a5c7d6' },
@@ -8,9 +9,10 @@ const SCENES = [
   { id: 'words', name: 'Words in motion', color: '#C49ED8' },
   { id: 'ghibli25', name: 'Studio Ghibli · Lucy Latest', color: '#8bb9bd' },
   { id: 'monstersLiving', name: 'Small wonderful things · Living world', color: '#b4b3f6' },
-  { id: 'afterglow', name: 'Afterglow', color: '#FAA0D0' }
+  { id: 'afterglow', name: 'Afterglow', color: '#FAA0D0' },
+  { id: 'customRestyle', name: 'Custom restyle', color: '#C49ED8' }
 ];
-const defaults = { cameraId: '', displayId: '', displayFormat: '16:9', outputMapping: 'screen', outputOffsetX: 0, outputOffsetY: 0, outputExtraWidth: 20, duration: 60, quality: 'auto', intensity: 0.7, mirror: true, demo: false, fullscreen: true, robotEnabled: false, scenes: SCENES.map(s => ({ id: s.id, enabled: true })) };
+const defaults = { cameraId: '', displayId: '', displayFormat: '16:9', outputMapping: 'screen', outputOffsetX: 0, outputOffsetY: 0, outputExtraWidth: 20, duration: 60, quality: 'auto', intensity: 0.7, mirror: true, demo: false, fullscreen: true, robotEnabled: false, customRestylePrompt: CUSTOM_RESTYLE_PROMPT, scenes: SCENES.map(s => ({ id: s.id, enabled: true })) };
 function sanitize(input = {}) {
   const num = (v, min, max, fallback) => Number.isFinite(Number(v)) ? Math.min(max, Math.max(min, Number(v))) : fallback;
   const list = [], seen = new Set();
@@ -20,6 +22,7 @@ function sanitize(input = {}) {
   return { ...defaults, scenes: list, cameraId: String(input.cameraId ?? '').slice(0, 256), displayId: String(input.displayId ?? '').slice(0, 30), displayFormat: ['16:9', '4:3', 'fill'].includes(input.displayFormat) ? input.displayFormat : defaults.displayFormat,
     outputMapping: input.outputMapping === 'wall-1392' ? 'wall-1392' : 'screen', outputOffsetX: Math.round(num(input.outputOffsetX, 0, 16384, 0)), outputOffsetY: Math.round(num(input.outputOffsetY, 0, 16384, 0)),
     outputExtraWidth: Math.round(num(input.outputExtraWidth, 0, 200, defaults.outputExtraWidth)),
+    customRestylePrompt: customRestylePrompt(input.customRestylePrompt),
     duration: num(input.duration, 10, 60, 60), intensity: num(input.intensity, 0.1, 1, .7), quality: ['auto', 'high', 'balanced', 'low'].includes(input.quality) ? input.quality : 'auto', mirror: input.mirror !== false, demo: input.demo === true, fullscreen: input.fullscreen !== false, robotEnabled: input.robotEnabled === true };
 }
 module.exports = { SCENES, defaults, sanitize };

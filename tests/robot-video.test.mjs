@@ -13,16 +13,17 @@ const blackPixels = new Uint8ClampedArray(4096), flatPixels = new Uint8ClampedAr
 
 // Run the actual isolated service with controlled decoded-frame callbacks and
 // a virtual clock. Provider traffic and camera capture never leave this test.
-async function videoService({ holdPublish = false, sceneId = 'robots', inputWidth = 1280, inputHeight = 720 } = {}) {
+async function videoService({ holdPublish = false, sceneId = 'robots', inputWidth = 1280, inputHeight = 720, prompt = 'Test prompt', earlyPrompt, authPrompt } = {}) {
   let now = 1000, callback, connectionOptions, outputPixels = goodPixels, inputSeq = 0, releasePublish;
   let connections = 0, closes = 0, stoppedTracks = 0;
-  const failures = [], published = [], draws = [], intervals = new Set();
+  const failures = [], published = [], draws = [], promptUpdates = [], intervals = new Set();
   const stream = { getVideoTracks: () => [{ requestFrame() {} }], getTracks: () => [{ stop() { stoppedTracks++; } }] };
   const video = { videoWidth: 1280, videoHeight: 720, play: async () => {},
     requestVideoFrameCallback(fn) { assert.equal(callback, undefined, 'Only one frame callback may be queued'); callback = fn; } };
   const api = {
-    onStop(fn) { this.stop = fn; }, closed() {}, stage() {},
-    job: async () => ({ id: 7, provider: 'decart', sceneId }), token: async () => 'fake-token',
+    onPrompt(fn) { this.updatePrompt = fn; }, onStop(fn) { this.stop = fn; }, closed() {}, stage() {},
+    job: async () => { if (earlyPrompt) api.updatePrompt({ id: 7, prompt: earlyPrompt }); return { id: 7, provider: 'decart', sceneId, prompt }; },
+    token: async () => { if (authPrompt) api.updatePrompt({ id: 7, prompt: authPrompt }); return 'fake-token'; },
     frame: async () => ({ seq: ++inputSeq, width: inputWidth, height: inputHeight, pixels: new Uint8ClampedArray(inputWidth * inputHeight * 4) }),
     publish: frame => { published.push(frame); return holdPublish ? new Promise(resolve => { releasePublish = resolve; }) : Promise.resolve(true); },
     complete: result => failures.push(result)
@@ -37,13 +38,14 @@ async function videoService({ holdPublish = false, sceneId = 'robots', inputWidt
     },
     Date: { now: () => now }, Uint8ClampedArray, ImageData: class {},
     usableDimensions, usablePixels, coverRect, decartModel, liveScene: () => ({ prompt: 'robots' }),
-    openDecartConnection(options) { connections++; connectionOptions = options; return { close() { closes++; return Promise.resolve({ acknowledged: true }); } }; },
+    openDecartConnection(options) { connections++; connectionOptions = options; return { setPrompt: text => promptUpdates.push(text), close() { closes++; return Promise.resolve({ acknowledged: true }); } }; },
     setInterval: fn => { intervals.add(fn); return fn; }, clearInterval: fn => intervals.delete(fn), clearTimeout() {}
   });
   await vm.runInContext(`(async () => { ${source}\n})()`, context);
   await connectionOptions.onRemoteStream(stream);
   return {
-    failures, published, draws,
+    failures, published, draws, promptUpdates, connectionOptions,
+    updatePrompt: (prompt, id = 7) => api.updatePrompt({ id, prompt }),
     get connections() { return connections; }, get closes() { return closes; }, get stoppedTracks() { return stoppedTracks; },
     get queued() { return !!callback; }, acknowledge() { releasePublish?.(true); },
     async frame({ after = 50, pixels = goodPixels, width = 1280, height = 720 } = {}) {
@@ -55,6 +57,18 @@ async function videoService({ holdPublish = false, sceneId = 'robots', inputWidt
     stop: () => api.stop({ id: 7 })
   };
 }
+
+test('custom restyle forwards the saved prompt and keeps the latest edit across initialization and authentication', async () => {
+  for (const edits of [{}, { earlyPrompt: 'Early edit' }, { earlyPrompt: 'Early edit', authPrompt: 'Edit during auth' }]) {
+    const service = await videoService({ sceneId: 'customRestyle', prompt: 'Initial style', ...edits });
+    assert.equal(service.connectionOptions.prompt, edits.authPrompt || edits.earlyPrompt || 'Initial style');
+    service.updatePrompt('Live edit'); service.updatePrompt('Wrong session', 99);
+    assert.deepEqual(service.promptUpdates, ['Live edit']);
+    assert.equal(service.connections, 1);
+    await service.stop(); service.updatePrompt('Too late');
+    assert.deepEqual(service.promptUpdates, ['Live edit']);
+  }
+});
 
 test('Restyle input preserves face proportions at every shared-camera resolution', async () => {
   for (const inputWidth of [480, 640, 960, 1280]) {

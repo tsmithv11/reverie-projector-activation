@@ -13,7 +13,7 @@ const { PROVIDER_NAMES, configuredProviders, backupProvider } = require('./core/
 const { resolveKeyPath } = require('./core/key-path.cjs');
 const { outputLayout, OutputPlacement } = require('./core/output-placement.cjs');
 const { FAILURES, robotStatus, safeDiagnostic, classifyRobotFailure } = require('./core/robot-status.cjs');
-const { LIVE_SCENE_IDS, isLiveScene, liveSceneEnabled, nextPlaylistScene } = require('./core/live-scenes.cjs');
+const { LIVE_SCENE_IDS, isLiveScene, liveScene, liveSceneEnabled, nextPlaylistScene } = require('./core/live-scenes.cjs');
 const { MAX_PEOPLE } = require('./core/segmentation-limits.cjs');
 protocol.registerSchemesAsPrivileged([{ scheme: 'reverie', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 if (process.env.REVERIE_TEST_DIR) app.setPath('userData', process.env.REVERIE_TEST_DIR);
@@ -210,7 +210,8 @@ function beginRobotAttempt(run) {
   // Keep setup and playback bounded, including pause/reselection. A backup
   // inherits any playback deadline already established by the first provider.
   robotStopAt = Math.min(robotStartedAt + 25000 + settings.duration * 1000, run.playbackStopAt || Infinity);
-  robotJob = { id: ++generation, manual: run.manual, provider, sceneId: run.sceneId };
+  robotJob = { id: ++generation, manual: run.manual, provider, sceneId: run.sceneId,
+    prompt: run.sceneId === 'customRestyle' ? settings.customRestylePrompt : liveScene(run.sceneId).prompt };
   cloud = { state: 'connecting', provider, sceneId: run.sceneId, message: `Connecting ${SCENES.find(scene => scene.id === run.sceneId).name} to ${PROVIDER_NAMES[provider]} · 25 second connection limit`, phase: robotPhase };
   log('robot-start', `${run.sceneId} / ${PROVIDER_NAMES[provider]} live camera conversion; viewers stay on the current scene until video arrives`);
   robot = makeWindow('robot', { width: 640, height: 360 });
@@ -238,6 +239,10 @@ app.whenReady().then(() => {
       robotOutput = null; robotDecoded = false;
       for (const id of LIVE_SCENE_IDS) scheduler.availability(id, false, performance.now());
       if (!cloud.code) cloud = { state: 'waiting', message: '' };
+    }
+    if (old.customRestylePrompt !== settings.customRestylePrompt && robotJob?.sceneId === 'customRestyle' && !robotClosing) {
+      robotJob.prompt = settings.customRestylePrompt;
+      robot.webContents.send('robot-prompt', { id: robotJob.id, prompt: robotJob.prompt });
     }
     syncRobot(); broadcast(); return state();
   });

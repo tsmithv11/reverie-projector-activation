@@ -1,6 +1,6 @@
 # Architecture
 
-Electron provides a macOS/Linux desktop shell, native output-display enumeration, full-screen windows, permissions, isolated renderer processes, and a separate operator console. Canvas 2D supplies the visuals; bundled MediaPipe/EfficientDet-Lite0 supplies local person detection. Native browser media capture is shared by all scenes. No local HTTP server or open control port is required; a restricted `reverie://app/` protocol serves packaged assets.
+Electron provides a macOS/Linux desktop shell, native output-display enumeration, full-screen windows, permissions, isolated renderer processes, and a separate operator console. Canvas 2D supplies the visuals; bundled MediaPipe/EfficientDet-Lite0 supplies local person detection, and Pose Landmarker Full supplies Afterglow’s per-person masks. Native browser media capture is shared by all scenes. No local HTTP server or open control port is required; a restricted `reverie://app/` protocol serves packaged assets.
 
 ```mermaid
 flowchart LR
@@ -36,7 +36,7 @@ The engine captures at up to 30 fps. Publishing waits for an IPC acknowledgement
 | Bay and garden artwork canvas | Half the output width and height; upscaled once beneath the full-resolution portal; the bay landscape fills the output upright with only its foreground clipped, while the garden fits the opening; released when leaving artwork scenes |
 | Detection | 24 boxes; COCO person only, score ≥0.34 |
 | Motion | 24×14 grid; 48 strongest motion points; 24 occupied still points |
-| Small wonderful things · Living world | Separate local scene; 120 Hz spring substeps; independently scheduled breathing, glances, blinks, peeking, swimming, dives and hops; one shared 24×24 mesh with head/arm/tail weights and painted eyelids; no pose-frame swapping; continuous water plus bounded contact-driven wakes, ripples, crowns and ballistic drops; Canvas fallback |
+| Small wonderful things · Living world | Complete Canvas cartoon environment and characters; 120 Hz spring substeps and independent behavior scheduling; continuous head/torso outline and tapered arm curves with shoulder/elbow/wrist motion; animated expressions, fins, tails and foot tucks; filled wave geometry, curling foam and drawn reflections; shared swell field for buoyancy and clipping; bounded contact-driven wakes, rings, crowns and ballistic drops; no raster character/landscape inputs or WebGL |
 | Small wonderful things | Six independently animated sprite characters, six poses each; local horizontal motion response, bounded travel and cooldowns; 120 ms shared gate plus 180–360 ms local hold; grounded anticipation and one eased hop; water-only GPU pass |
 | Bubbles | 32 / 24 / 16; maximum lifetime 4.4 seconds; radius 1.3–2.7% of artwork width; immediate burst and up to 14/second at current motion points |
 | Bay ripples / splashes | 8 ripples fading within 1.4 seconds; 56 splash droplets fading within 0.65 seconds |
@@ -82,3 +82,11 @@ Main enforces 25 seconds for connection setup. Once displayed, the stream is lim
 
 
 Concurrency rejections before video arrives are classified as `SESSION_BUSY`. After the last configured provider fails, a 60-second backoff prevents tight retry loops. Connections become eligible after the wait, but open only for a later scheduled slot or an explicit selection. Paused rotation does not retry in the background. Lucy stays enabled throughout. No old `cloud-budget.json` cap or cooldown is loaded. App startup always resets Lucy to disabled, independent of saved settings.
+
+## Afterglow: local instance masks
+
+`SegmentationService` runs only while Afterglow is active, using the existing shared camera plane after letterboxing and mirroring. One CPU MediaPipe worker processes at most one capture at a time, with at most eight poses. Quality sets the analysis resolution and minimum interval; native mask resources are released after each inference callback. The next capture waits for publication acknowledgment, so there is no inference queue. Only newly advanced camera frames are submitted. Initialization/inference stalls time out after 15 seconds and retry after 30 seconds. Exit, reselection, camera changes, mirroring changes, and rehearsal changes terminate the worker and clear all tracks.
+
+A bounded global assignment matches normalized foreground descriptors using velocity prediction, area and a small clothing-color descriptor. Dormant tracks survive 1.5 seconds but are not rendered. At most 16 tracks are retained; their colors and numeric IDs are ephemeral, with no face recognition, persistence or network. Ambiguous crossings and longer occlusions can create new identities. Overlapping foreground confidence is assigned to one instance per pixel. Marching squares extracts interpolated .5 contours, including silhouette holes, and the audience draws translucent fills and a restrained two-pass glow.
+
+A separate latest-only segmentation IPC slot holds the exact captured pixels, fill and contours. It is exposed only to the authorized engine and audience windows; the cloud frame pump cannot receive this slot. Scene activation, camera ID, mirror and demo metadata reject obsolete results. Capture timestamps expire after 1.2 seconds and are never restamped on arrival. The audience applies the same cover transform to the paired pixels and masks in 16:9, 4:3 and Fill output. The normal camera pipeline remains available for other scenes. The worker, model, WASM, and branding are packaged locally under the existing self-only CSP. No runtime download is attempted.

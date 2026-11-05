@@ -1,6 +1,10 @@
+import { SegmentationService } from './core/segmentation-service.js';
 import { demoCrowd } from './core/demo.js';
 const api = window.installation;
 const initialState = await api.state();
+const segmentation = new SegmentationService(api);
+segmentation.configure(initialState);
+let activeScene = initialState.active;
 let settings = initialState.settings, cloudStreaming = initialState.cloud.streaming;
 const video = document.querySelector('video'), canvas = document.createElement('canvas'), small = document.createElement('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true }), sx = small.getContext('2d', { willReadFrequently: true });
@@ -34,7 +38,7 @@ function initDetector() {
   detector.onerror = () => { detectorState = 'unavailable'; detectorReady = false; detectBusy = false; detectionRetry = Date.now() + 30000; };
   detector.postMessage({ type: 'init' });
 }
-function stopCamera() { openEpoch++; stream?.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; boxes = []; motion = { points: [], calm: [], amount: 0 }; lastVideoTime = -1; }
+function stopCamera() { segmentation.stop(); openEpoch++; stream?.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; boxes = []; motion = { points: [], calm: [], amount: 0 }; lastVideoTime = -1; }
 async function listDevices() { try { devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput').map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` })); } catch {} }
 async function connect() {
   if (opening || settings.demo || Date.now() < nextOpen) return;
@@ -54,6 +58,7 @@ async function connect() {
 }
 api.onState(s => {
   const changed = settings.cameraId !== s.settings.cameraId || settings.demo !== s.settings.demo || settings.mirror !== s.settings.mirror;
+  segmentation.configure(s); activeScene = s.active;
   settings = s.settings; level = s.rendering.quality ?? 1; cloudStreaming = s.cloud.streaming;
   if (changed) { stopCamera(); nextOpen = 0; initMotion(); }
 });
@@ -64,8 +69,9 @@ setInterval(async () => {
   const now = Date.now();
   if (!settings.demo && !stream) { connect(); return; }
   if (!settings.demo && (video.readyState < 2 || !video.videoWidth)) return;
+  let videoAdvanced = settings.demo;
   if (!settings.demo) {
-    if (video.currentTime !== lastVideoTime) { lastAdvance = now; lastVideoTime = video.currentTime; }
+    if (video.currentTime !== lastVideoTime) { videoAdvanced = true; lastAdvance = now; lastVideoTime = video.currentTime; }
     if (now - lastAdvance > 4500) { stopCamera(); cameraState = 'disconnected'; message = 'Camera stopped delivering frames; reconnecting'; nextOpen = now + 1000; return; }
   }
   const localWidth = [480, 640, 960][level];
@@ -81,6 +87,7 @@ setInterval(async () => {
     const scale = Math.min(w / video.videoWidth, h / video.videoHeight), vw = video.videoWidth * scale, vh = video.videoHeight * scale;
     ctx.save(); if (settings.mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); } ctx.drawImage(video, (w - vw) / 2, (h - vh) / 2, vw, vh); ctx.restore();
   }
+  if (videoAdvanced) segmentation.capture(canvas, now, level);
   if (now - detectionAt > 1600) boxes = [];
   const analysisWidth = [160, 256, 384][level], analysisHeight = analysisWidth * 9 / 16;
   if (small.width !== analysisWidth) { small.width = analysisWidth; small.height = analysisHeight; }
@@ -89,7 +96,7 @@ setInterval(async () => {
     const pixels = sx.getImageData(0, 0, analysisWidth, analysisHeight).data; motionBusy = true; motionSent = now;
     motionWorker.postMessage({ pixels, width: analysisWidth, height: analysisHeight, boxes, dt: Math.min(.5, (now - lastMotion) / 1000) }, [pixels.buffer]); lastMotion = now;
   }
-  if (!settings.demo && detectorReady && !detectBusy && now - lastDetect > [650, 400, 300][level]) {
+  if (activeScene !== 'afterglow' && !settings.demo && detectorReady && !detectBusy && now - lastDetect > [650, 400, 300][level]) {
     // Detection keeps its existing work budget and normalized camera coordinates.
     if (detection.width !== localWidth) { detection.width = localWidth; detection.height = localWidth * 9 / 16; }
     detectionCtx.drawImage(canvas, 0, 0, detection.width, detection.height);
@@ -103,9 +110,10 @@ setInterval(async () => {
 }, 33);
 setInterval(() => {
   const now = Date.now();
+  segmentation.check(now);
   if (motionBusy && now - motionSent > 3000) initMotion();
   if ((detectBusy || detectorState === 'starting') && now - detectSent > 15000) { detector.terminate(); detectorState = 'unavailable'; detectorReady = false; detectBusy = false; detectionRetry = now + 30000; }
   if (!detectorReady && detectorState === 'unavailable' && now >= detectionRetry) initDetector();
-  api.health({ state: cameraState, message: detectorState === 'unavailable' && !settings.demo ? `${message}. Person detection unavailable; motion effects continue. Retrying the detector.` : message, devices, detector: settings.demo ? 'synthetic' : detectorState, detectorMs: Math.round(detectorMs), width: canvas.width, height: canvas.height, boxes: boxes.length });
+  api.health({ segmentation: segmentation.state, segmentationMs: Math.round(segmentation.ms), segmentedPeople: segmentation.people, state: cameraState, message: detectorState === 'unavailable' && !settings.demo ? `${message}. Person detection unavailable; motion effects continue. Retrying the detector.` : message, devices, detector: settings.demo ? 'synthetic' : detectorState, detectorMs: Math.round(detectorMs), width: canvas.width, height: canvas.height, boxes: boxes.length });
 }, 1000);
 window.addEventListener('beforeunload', () => { stopCamera(); detector.terminate(); motionWorker.terminate(); });

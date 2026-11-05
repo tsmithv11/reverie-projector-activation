@@ -2,6 +2,16 @@
 
 This is a runnable first build, not a completed venue acceptance test. Four local scenes, the generated robot scene, controls and recovery paths are implemented. The current Lucy adapter continuously streams camera and returned video. Earlier static-image checks below are historical and do not establish realtime behavior; see the latest verification section.
 
+## Afterglow — November 4, 2026
+
+All 143 unit/regression tests pass. New coverage exercises stable colors through detector reordering, movement, crossing and short occlusion; unique one-to-one assignments; bounded retained tracks; foreground holes and exclusive overlap ownership; subpixel contours; worker backpressure, reset, failure, timeout and retry behavior. Builds verify the checksums of both bundled models.
+
+Desktop checks passed with external HTTP blocked and zero external requests or renderer errors. Rehearsal rendered at 30 fps at high/16:9 and low/4:3. A local two-person Y4M fixture derived from Google's public `mediapipe-assets/pose.jpg` produced two separate masks with stable IDs/colors at 640×360; one warmed inference sample took 54 ms. This is a functional check, not a latency benchmark. Chromium's empty test camera produced zero masks and zero fill pixels. Both runs passed mirroring changes, scene exit/re-entry and expiration of masks after a camera stall. Screenshots and reports are under `test-results/afterglow*`; these fixtures are not shipped in the app. No real audience was recorded or uploaded.
+
+The model processes at most eight people. Venue camera coverage, small or heavily occluded subjects, and identity continuity through long or ambiguous occlusions still require an on-site rehearsal.
+
+The rebuilt Apple Silicon app and transfer ZIP include the verified segmentation model and worker. Packaged resources match the tested source, private configuration/test fixtures are excluded, and `codesign --verify --deep --strict` passes. The packaged app also passed the two-person desktop test with zero external requests/errors (27 fps high rehearsal, 30 fps low rehearsal; one warmed model sample 54.3 ms). The ZIP SHA-256 is saved beside the archive.
+
 ## Transient Lucy frame recovery — October 18, 2026
 
 The local installation log recorded `INVALID_IMAGE` exits about 2.6 and 28.8 seconds after robot playback began, followed by a full 30-second run. The worker previously terminated a live connection on its first rejected frame. It now skips transient black, flat and invalid-dimension frames and resumes on the same connection when usable frames return. Rejected frames do not refresh the last good output or extend setup/playback deadlines. Two seconds without usable output still stops the stream.
@@ -367,3 +377,29 @@ All 137 unit/regression tests passed, including continuity through motion revers
 Evidence: `test-results/living-world-check.json`, `test-results/living-world-*.png`, and the 23-second idle/activity/settling preview at `test-results/living-world-preview.mp4`. Run `npm run test:living-world -- --record` to regenerate the WebM preview and checks.
 
 The Apple Silicon app and transfer ZIP were rebuilt using the installed Electron distribution. Strict deep signature verification passed. Packaged settings, composition, audience/operator bundles and styles match the tested files; private files and diagnostic fixtures are excluded. The transfer ZIP's SHA-256 checksum was refreshed and verified.
+
+## Living world — articulated artwork revision, November 4, 2026
+
+The earlier mesh version above was rejected in visual review: character distortion did not read as cartoon action, and its water was too faint. It has been replaced within `monstersLiving`; the original `monsters` scene and its four implementation modules retain their exact SHA-256 hashes.
+
+Six new transparent, nine-part character atlases preserve the feathered pastel style. A shared Canvas rig rotates fixed-shape heads, upper arms, forearms, feet and tails around joints. Animated eyes, eyelids, brows and mouths supply facial expression. Actions now include shoulder/elbow waves, alternating paddles, tucked feet, anticipation and landing follow-through. The main greeting points into the portal, and foreground positions leave room for the tilted frame. The water-only GPU pass moves the painted surface beneath broad Canvas crests; the same swell field drives body buoyancy, clipping and contact foam. Character animation does not depend on WebGL.
+
+All 145 unit/regression tests passed. New motion checks verify fixed limb lengths, a continuous visible hand arc, tucked feet, and visible foreground wave displacement at rest. The Electron rehearsal sustained 30 fps in High 16:9 and Low 4:3, including camera loss. An idle pixel comparison found visible changes in 84.5% of sampled foreground water, with zero changes in sampled sky and rock. Scene switching, resource cleanup, water-WebGL loss, and zero camera-image uploads passed with no renderer errors. Portal framing, blinking, active poses, peeking and sequential motion frames were inspected. Inputs were synthetic; physical projector/audience rehearsal remains venue-dependent.
+
+Evidence: `test-results/living-world-check.json`, the regenerated `living-world-*.png` images, and the 23-second `test-results/living-world-articulated-preview.mp4` showing six seconds of rest, nine seconds of motion and eight seconds of settling. New artwork and exact built-in image-generation prompts are stored in `assets/scenes/small-wonderful-things/rigs-v2/` and `rig-provenance.json`.
+
+The Apple Silicon app and transfer ZIP were rebuilt from the installed Electron distribution. Strict deep signature verification passed; all six new atlases plus the packaged settings, composition, audience/operator bundles and stylesheet match the tested workspace bytes. Diagnostic fixtures and generation provenance are excluded from the app. The refreshed ZIP checksum passed verification.
+
+## Living world — complete cartoon redraw, November 4, 2026
+
+Replaced the cutout-character and displaced-water implementation following visual feedback. The whole bay is now a native 2D cartoon illustration: sunset, clouds, headlands, suspension bridge, shore, rock, six creatures and water all use Canvas paths and a common pastel palette. The original scene's four modules still match their recorded SHA-256 hashes.
+
+The head, neck and body share one continuously drawn silhouette. Arm contours taper through the shoulder, bend through the elbow and continue into the fingers; independently damped wrists supply follow-through. Shoulder roots are hidden inside the chest, and relaxed arms have a soft elbow bend. Feet become visible during jumps, tuck in flight, and trigger one landing splash as they reach the sea. Glances, blinks, expressions, fin sway, tails, dives, swimming and peeking retain independent schedules and continuous transitions.
+
+The sea is filled wave geometry with curling foam and drawn sunset reflections. It does not sample or distort an image. The wave surface also drives buoyancy and body clipping, while movement leaves wakes, contact rings, crowns and droplets. The desktop rehearsal explicitly replaces `drawImage` with a throwing function during a render and verifies that the complete scene still draws, with no WebGL context. The previous generated atlases remain in the workspace as an unused iteration.
+
+All 147 unit/regression tests pass, including new checks for changing arm curvature, wrist follow-through and landing splashes at descending-foot contact. Evidence and the final desktop timing are in `test-results/living-world-check.json`; regenerated screenshots cover idle, active, peeking and both portal formats. `test-results/living-world-cartoon-preview.mp4` records six seconds of idle, nine seconds of synthetic movement and eight seconds of settling. Physical projector/audience rehearsal remains venue-dependent.
+
+The final desktop run reported 29.9 fps in High 16:9, 30 fps in Low 4:3 and 30 fps after camera loss, with no renderer errors or camera-image uploads. The sampled foreground water changed across 30.7% of pixels over one idle second; sampled rock and clear sky pixels stayed fixed. Sequential action frames, the jump feet, shoulder connections, peeking and both portal formats were visually reviewed.
+
+The rebuilt Apple Silicon app passed strict deep signature verification. Its audience bundle includes the new path-based cartoon renderers and matches the tested build, as do settings, composition, operator and styles. Private files and diagnostic fixtures are excluded. The transfer ZIP and refreshed SHA-256 checksum passed verification.

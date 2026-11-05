@@ -2,7 +2,7 @@
 // Rotate in pixel space so the tapered silhouette survives every output format.
 const OUTER = [[80, 56], [249, 26], [299, 198], [22, 263]];
 const INNER = [[91, 69], [238, 44], [278, 184], [47, 241]];
-export const SCENE_ROTATIONS = Object.freeze({ heat: 16, robots: -6, monsters: 0, lines: 26, garden: 10, cartoon: 21, words: -12, animation3d: -18, cyberpunk: 30, claymation: 5, ghibli25: 13, monstersLiving: 0 });
+export const SCENE_ROTATIONS = Object.freeze({ heat: 16, robots: -6, monsters: 0, lines: 26, garden: 10, cartoon: 21, words: -12, animation3d: -18, cyberpunk: 30, claymation: 5, ghibli25: 13, monstersLiving: 0, afterglow: -2 });
 export const TRANSITION_MS = 1400;
 export const LOGO_BOTTOM = .075;
 // Exact colors from the supplied Reverie brand palette, shared by the surround,

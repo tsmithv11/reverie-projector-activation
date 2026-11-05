@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import LivingMonsters from '../app/scenes/monsters-living.js';
 import { LivingCreature, LIVING_CAST } from '../app/scenes/living-creatures.js';
 import { LivingWater } from '../app/scenes/living-water.js';
+import { PAINTED_RIGS, armJoints, skinWeights } from '../app/scenes/living-puppets.js';
 const require = createRequire(import.meta.url);
 const { SCENES, sanitize } = require('../app/core/settings.cjs');
 const still = { motion: { points: [] } };
@@ -91,6 +92,52 @@ test('water scales contact effects by size and speed, follows swimming, and sett
   assert(large.rings.at(-1).wake);assert.equal(large.rings.at(-1).direction,-1);
   for(let i=0;i<600;i++)large.update(1/60);
   assert.equal(large.rings.length+large.drops.length+large.crowns.length,0);
+});
+
+test('connected painted arms keep bone lengths and move smoothly through a greeting',()=>{
+  const hero=new LivingCreature(LIVING_CAST[0],0);hero.begin('greet',1,.4);
+  const hands=[],r=PAINTED_RIGS.tall;
+  for(let i=0;i<240;i++){
+    hero.update(1/60);const pose=hero.pose();
+    for(const side of ['left','right']){
+      const {shoulder,elbow,hand}=armJoints('tall',pose,side),[s,e,h]=r[side];
+      assert(Math.abs(Math.hypot(elbow[0]-shoulder[0],elbow[1]-shoulder[1])-Math.hypot(e[0]-s[0],e[1]-s[1]))<1e-9);
+      assert(Math.abs(Math.hypot(hand[0]-elbow[0],hand[1]-elbow[1])-Math.hypot(h[0]-e[0],h[1]-e[1]))<1e-9);
+      if(side==='right')hands.push(hand);
+    }
+  }
+  assert(Math.max(...hands.map(h=>h[1]))-Math.min(...hands.map(h=>h[1]))>90);
+  for(let i=1;i<hands.length;i++)assert(Math.hypot(hands[i][0]-hands[i-1][0],hands[i][1]-hands[i-1][1])<5);
+});
+
+test('rolling water has visible displacement even when audience activity is zero',()=>{
+  const water=new LivingWater(),heights=[];
+  for(let i=0;i<360;i++){water.update(1/60);heights.push(water.surface(.35,.91));}
+  assert(Math.max(...heights)-Math.min(...heights)>.012,'foreground crest must travel more than six pixels at 540p');
+  for(let i=1;i<heights.length;i++)assert(Math.abs(heights[i]-heights[i-1])<.001,'water settles and rolls continuously');
+  assert.equal(water.surface(.35,.91),water.surface(.35,.91,water.time),'one height field drives waves and buoyancy');
+});
+
+test('arm skin blends continuously into the painted torso without moving the chest',()=>{
+  for(const [id,r] of Object.entries(PAINTED_RIGS)){
+    const chest=skinWeights(id,[r.anchor[0],(r.neck[1]+r.anchor[1])*.5]);
+    assert(chest.arms[0]<.01&&chest.arms[1]<.01,id);
+    for(const [index,side] of ['left','right'].entries()){
+      const [s,,h]=r[side];assert(skinWeights(id,h).arms[index]>.98,id);
+      let previous=skinWeights(id,s).arms[index];
+      for(let i=1;i<=100;i++){
+        const p=[s[0]+(h[0]-s[0])*i/100,s[1]+(h[1]-s[1])*i/100],w=skinWeights(id,p).arms[index];
+        assert(Number.isFinite(w)&&w>=0&&w<=1);assert(Math.abs(w-previous)<.025,id);previous=w;
+      }
+    }
+  }
+});
+
+test('jump splash begins when the descending feet reach the sea',()=>{
+  const c=new LivingCreature(LIVING_CAST[2],2);c.begin('hop',1,.8);
+  let contact=null,count=0;
+  for(let i=0;i<140;i++)for(const e of c.update(1/60))if(e.kind==='land'){count++;contact={lift:c.lift,speed:c.liftV};}
+  assert.equal(count,1);assert(contact.speed<0);assert(contact.lift>.006&&contact.lift<c.spec.height*.12);
 });
 
 test('extended crowd activity, quality changes, invalid data and cleanup remain bounded', () => {

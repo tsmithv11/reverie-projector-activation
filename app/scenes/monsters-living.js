@@ -2,13 +2,23 @@ import Monsters from './monsters.js';
 import { LIVING_CAST, LivingCreature, clamp } from './living-creatures.js';
 import { LivingPuppets } from './living-puppets.js';
 import { LivingWater } from './living-water.js';
+import { LivingBay } from './living-bay.js';
 
 const TAU = Math.PI * 2;
-const ROCK = [[.451,.697],[.459,.650],[.474,.590],[.483,.566],[.495,.523],[.514,.493],[.531,.503],[.553,.548],[.571,.596],[.592,.626],[.613,.697],[.613,.716],[.448,.716]];
-
-// The original scene owns the shared asset loader and bubble drawing only.
-// Its animation, rendering and original files remain unchanged.
+// Preserve the reference painting and established motion-positioned bubbles.
+// Connected full-body artwork is animated independently of the original scene.
 export default class LivingMonsters extends Monsters {
+  initialize() {
+    this.disposed=false;this.images={};this.sprites={};
+    this.background=new Image();
+    this.background.onload=()=>{if(!this.disposed)this.artwork=new LivingBay(this.background);};
+    this.background.onerror=()=>{this.assetError=true;};
+    this.background.src='scenes/small-wonderful-things/bay-empty.png';
+    const cast=this.images.cast=new Image();
+    cast.onload=()=>{if(!this.disposed){this.puppets=new LivingPuppets(cast);if(this.puppets.error)this.assetError=true;}};
+    cast.onerror=()=>{this.assetError=true;};
+    cast.src='scenes/small-wonderful-things/connected-v3/cast.png';
+  }
   activate() {
     this.creatures = LIVING_CAST.map((s,i) => new LivingCreature(s,i));
     this.water = new LivingWater(); this.bubbles = []; this.ripples = []; this.splashes = [];
@@ -18,8 +28,7 @@ export default class LivingMonsters extends Monsters {
 
   update({ dt, analysis, intensity = .7, quality = 2 }) {
     dt = clamp(Number.isFinite(dt) ? dt : 0, 0, .1); intensity = clamp(Number.isFinite(intensity) ? intensity : .7);
-    this.quality = Math.round(clamp(quality,0,2));
-    if (this.background && (!this.background.naturalWidth || Object.keys(this.sprites).length < LIVING_CAST.length)) return;
+    this.quality = Math.round(clamp(Number.isFinite(quality)?quality:2,0,2));
     this.elapsed += dt; this.animationTime += dt;
     const points = (analysis?.motion?.points || []).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.strength ?? 1) && (p.strength ?? 1) > .045).slice(0,48);
     this.motionHold = points.length ? this.motionHold + dt : 0;
@@ -65,52 +74,33 @@ export default class LivingMonsters extends Monsters {
   }
 
   render(ctx, { w, h, foregroundClip }) {
-    if (this.assetError) throw Error('Living bay character artwork could not load');
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    if (!this.background?.complete || !this.background.naturalWidth) { ctx.fillStyle='#bca1d3'; ctx.fillRect(0,0,w,h); return; }
-    this.artwork?.render(ctx,w,h,this.animationTime,.16+this.activity*.45);
-    if (!this.artwork) ctx.drawImage(this.background,0,0,w,h);
-    this.water.drawWaves(ctx,w,h,this.animationTime);
-    if (Object.keys(this.sprites).length < LIVING_CAST.length) return;
-    if (!this.puppets) this.puppets = new LivingPuppets(this.sprites);
-    const landscapeWidth = w, landscapeHeight = h;
-    let ox = 0, oy = 0;
+    if(this.assetError)throw Error('Living world painted artwork could not load');
+    if(!this.artwork||!this.puppets){ctx.fillStyle='#d8b2da';ctx.fillRect(0,0,w,h);return;}
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    this.artwork.render(ctx,w,h,this.animationTime);
+    ctx.save();this.artwork.waterClip(ctx,w,h);this.water.drawWaves(ctx,w,h,this.animationTime);ctx.restore();
+    const landscapeWidth=w,landscapeHeight=h;
+    let ox=0,oy=0;
     ctx.save();
-    if (foregroundClip) {
-      ctx.beginPath(); foregroundClip.forEach((p,i)=>i ? ctx.lineTo(p.x*w,p.y*h) : ctx.moveTo(p.x*w,p.y*h)); ctx.closePath(); ctx.clip();
-      ox = Math.min(...foregroundClip.map(p=>p.x))*w; oy = Math.min(...foregroundClip.map(p=>p.y))*h;
-      w = Math.max(...foregroundClip.map(p=>p.x))*w-ox; h = Math.max(...foregroundClip.map(p=>p.y))*h-oy;
+    if(foregroundClip){
+      ctx.beginPath();foregroundClip.forEach((p,i)=>i?ctx.lineTo(p.x*w,p.y*h):ctx.moveTo(p.x*w,p.y*h));ctx.closePath();ctx.clip();
+      ox=Math.min(...foregroundClip.map(p=>p.x))*w;oy=Math.min(...foregroundClip.map(p=>p.y))*h;
+      w=Math.max(...foregroundClip.map(p=>p.x))*w-ox;h=Math.max(...foregroundClip.map(p=>p.y))*h-oy;
       ctx.translate(ox,oy);
     }
-    // Keep the shy character physically behind the painted rock in both output
-    // formats, while its spring motion remains in normalized scene coordinates.
-    const placement = c => {
-      const p = c.pose();
-      if (c.spec.id !== 'green') return p;
-      const homeX = (.566*landscapeWidth-ox)/w, homeY = (.712*landscapeHeight-oy)/h;
-      return { ...p, x: homeX+p.x-c.spec.x, y: homeY+p.y-c.spec.y, waterline: homeY };
-    };
-    this.puppets.render(ctx,this.creatures,w,h,placement);
-    ctx.save(); ctx.translate(-ox,-oy); ctx.beginPath();
-    ROCK.forEach(([x,y],i)=>i ? ctx.lineTo(x*landscapeWidth,y*landscapeHeight) : ctx.moveTo(x*landscapeWidth,y*landscapeHeight));
-    ctx.closePath(); ctx.clip(); ctx.drawImage(this.background,0,0,landscapeWidth,landscapeHeight); ctx.restore();
-    // Rebase green's ripples by the same offset as its body. The simulation and
-    // the rest of the cast do not depend on the output's aspect ratio or rim.
-    const green = this.creatures[1], gp = placement(green), dx = gp.x-green.x, dy = gp.waterline-green.spec.y;
-    this.water.render(ctx,w,h,effect => effect.id === 'green' ? {x:effect.x+dx,y:effect.y+dy} : effect);
-    // A broken meniscus and a soft contact shadow join the painted body to the
-    // rolling surface. Both shrink away during takeoff and submersion.
-    for (const c of this.creatures) {
-      const p = placement(c), contact = clamp(1-p.depth*1.5)*clamp(1-p.lift/.025);
-      if (contact<=0) continue;
-      const size=c.spec.height*h, y=(p.waterline ?? c.spec.y)*h;
-      ctx.save(); ctx.globalAlpha=contact*.14;ctx.fillStyle='#6a6caf';
-      ctx.beginPath();ctx.ellipse(p.x*w,y+1,size*.32,h*.004,0,0,TAU);ctx.fill();
-      ctx.globalAlpha=contact*.65;ctx.strokeStyle='#ffe7f3';ctx.lineWidth=Math.max(.7,w*.001);ctx.lineCap='round';
-      ctx.beginPath();ctx.ellipse(p.x*w,y,size*.32,h*.004,0,.1,Math.PI-.1);ctx.stroke();ctx.restore();
+    const surface=(x,y)=>(this.water.surface((x*w+ox)/landscapeWidth,(y*h+oy)/landscapeHeight)*landscapeHeight-oy)/h;
+    this.puppets.render(ctx,this.creatures,w,h,c=>c.pose(),surface);
+    ctx.save();ctx.translate(-ox,-oy);this.artwork.rock(ctx,landscapeWidth,landscapeHeight);ctx.restore();
+    this.water.render(ctx,w,h,effect=>({x:effect.x,y:surface(effect.x,effect.y)}));
+    for(const c of this.creatures){
+      const p=c.pose(),contact=clamp(1-p.depth*1.5)*clamp(1-p.lift/.025);
+      if(contact<=0)continue;
+      ctx.save();ctx.translate(-ox,-oy);
+      this.water.contact(ctx,(p.x*w+ox)/landscapeWidth,(c.spec.y*h+oy)/landscapeHeight,c.spec.height*h*.27/landscapeWidth,contact,landscapeWidth,landscapeHeight);ctx.restore();
     }
-    for (const bubble of this.bubbles) this.drawBubble(ctx,bubble,w,h);
-    ctx.restore();
+
+    for(const bubble of this.bubbles)this.drawBubble(ctx,bubble,w,h);
+    ctx.restore();this.artwork.shore(ctx,landscapeWidth,landscapeHeight);
   }
 
   deactivate() { super.deactivate(); this.water?.cleanup(); }

@@ -1,7 +1,7 @@
 import { isLiveScene, liveScene } from './core/live-scenes.cjs';
 const api = window.installation, $ = id => document.getElementById(id);
 let state = await api.state(), signature = '', deviceSignature = '';
-const icons = { heat: '⌗', robots: '♙', monsters: '☁', monstersLiving: '☁', lines: '⌖', garden: '✳', cartoon: '✎', words: 'Reverie 2026', animation3d: '◈', cyberpunk: 'ϟ', claymation: '●', ghibli25: '✎' };
+const icons = { afterglow: '◉', heat: '⌗', robots: '♙', monsters: '☁', monstersLiving: '☁', lines: '⌖', garden: '✳', cartoon: '✎', words: 'Reverie 2026', animation3d: '◈', cyberpunk: 'ϟ', claymation: '●', ghibli25: '✎' };
 async function configure(patch) { try { state = await api.configure(patch); render(state); } catch { $('notice').textContent = 'Could not save settings. Check that the settings folder is writable.'; } }
 function sceneList(s) {
   const key = JSON.stringify(s.settings.scenes); if (key === signature) return; signature = key;
@@ -45,6 +45,7 @@ function render(s) {
   $('remaining').textContent = Math.ceil(s.remaining / 1000); $('progress').style.width = `${100 - s.remaining / (s.settings.duration * 10)}%`;
   $('pause').textContent = s.paused ? '▶  Resume rotation' : 'Ⅱ  Pause rotation'; $('rotation-label').textContent = s.paused ? 'Rotation paused' : 'Automatic rotation';
   $('fps').textContent = s.rendering.fps || '—'; $('camera-health').textContent = s.camera.state; $('detector-health').textContent = s.camera.detector === 'ready' ? `${s.camera.boxes} · ${s.camera.detectorMs} ms` : s.camera.detector;
+  if (s.active === 'afterglow') $('detector-health').textContent = s.camera.segmentation === 'ready' ? `${s.camera.segmentedPeople} masks · ${s.camera.segmentationMs} ms` : `Masks · ${s.camera.segmentation || 'starting'}`;
   $('quality-health').textContent = `${['Reduced','Balanced','High'][s.rendering.quality ?? 1]}${s.rendering.outputWidth ? ` · ${s.rendering.outputWidth} × ${s.rendering.outputHeight}` : ''}`; $('cloud-health').textContent = s.cloud.ready ? 'Live' : s.cloud.state === 'connecting' ? `Connecting · ${s.cloud.provider === 'decart' ? 'Decart' : 'FAL'}` : !s.settings.robotEnabled ? 'Off' : s.cloud.code ? 'Unavailable' : 'Enabled · idle';
   $('health-note').textContent = s.rendering.failure || s.camera.message; $('camera-pill').textContent = s.camera.state === 'demo' ? 'SYNTHETIC CROWD' : `CAMERA ${s.camera.state.toUpperCase()}`;
   $('decart-key-status').textContent = s.cloud.providers.decart ? 'Key configured' : 'Not configured';

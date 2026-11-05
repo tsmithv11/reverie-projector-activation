@@ -32,7 +32,7 @@ for (const id of LIVE_SCENE_IDS) scheduler.availability(id, false, performance.n
 const gate = new CloudGate();
 let operator, audience, engine, robot, quitting = false, frame = null, preview = '', robotOutput = null, robotJob = null, robotTimer, generation = 0;
 let robotClosing = null, robotRun = null, quitAfterCleanup = false;
-let pendingLiveScene = null;
+let pendingLiveScene = null, segmentationFrame = null;
 const robotTokens = new WeakMap();
 let outputPlacement;
 let robotDecoded = false, robotStartedAt = 0, robotPresented = false, robotStopAt = 0, robotPhase = 'idle';
@@ -51,7 +51,7 @@ function displays() { return screen.getAllDisplays().map(d => ({ id: String(d.id
 function cloudStatus() { return robotStatus({ settings, hasKey: configuredProviders(keys).length > 0, gate, cloud, ready: !!robotOutput && robotDecoded && Date.now() - robotOutput.at < 2000, camera: camera.state, frameFresh: !!frame && Date.now() - frame.at < 2000, now: Date.now() }); }
 function state() { return { settings, scenes: SCENES, active: scheduler.active, activation: scheduler.activation, paused: scheduler.paused, remaining: scheduler.left(performance.now()), camera, rendering, cloud: { ...cloudStatus(), configured: configuredProviders(keys).length > 0, providers: { decart: !!keys.decart, fal: !!keys.fal }, count: gate.session, sessionId: robotJob?.id || null, streaming: gate.busy && !robotClosing, closing: !!robotClosing, frames: robotOutput?.seq || 0, secondsLeft: gate.busy ? Math.max(0, Math.ceil((robotStopAt - Date.now()) / 1000)) : 0 }, displays: displays(), keyPath, logPath: path.join(runtime, 'installation.log'), logs: logTail.slice(-12), outputAvailable: !audience?.isDestroyed() && !!audience?.isVisible() }; }
 function send(win, channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
-function broadcast() { const s = state(); for (const win of [operator, audience, engine]) send(win, 'state', s); }
+function broadcast() { if (scheduler.active !== 'afterglow') segmentationFrame = null; const s = state(); for (const win of [operator, audience, engine]) send(win, 'state', s); }
 function allowed(event, win) { return win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame?.url.startsWith('reverie://app/'); }
 function guard(event, win) { if (!allowed(event, win)) throw Error('Unauthorized window'); }
 function handle(channel, getWindow, fn) { ipcMain.handle(channel, (event, ...args) => { guard(event, getWindow()); return fn(...args); }); }
@@ -74,6 +74,7 @@ function placeOutput(options) {
 function createAudience() { renderHeartbeat = Date.now(); audience = makeWindow('audience', { title: 'Reverie · Audience', frame: false }); audience.once('ready-to-show', () => { outputPlacement = new OutputPlacement(audience); placeOutput({ show: true }); }); audience.on('close', e => { if (!quitting) { e.preventDefault(); stopRobot('DISPLAY_LOST'); outputPlacement?.hide(); audience.hide(); operator?.show(); } }); }
 function createEngine() { cameraHeartbeat = Date.now(); engine = makeWindow('engine', { width: 640, height: 360 }); }
 function restart(role) {
+  if (role === 'engine') segmentationFrame = null;
   if (quitting || restarting.has(role)) return;
   if (role === 'robot') { if (robotClosing) robotClosing.finish('forced'); else stopRobot('RENDERER_EXIT'); return; }
   if (role === 'audience' || role === 'engine') stopRobot(role === 'engine' ? 'CAMERA_LOST' : 'DISPLAY_LOST');
@@ -227,6 +228,7 @@ app.whenReady().then(() => {
   ipcMain.handle('state', e => { if (![operator, audience, engine].some(w => w && e.sender === w.webContents)) throw Error('Unauthorized'); return state(); });
   handle('configure', () => operator, value => {
     const old = settings; settings = sanitize({ ...settings, ...value });
+    if (old.cameraId !== settings.cameraId || old.mirror !== settings.mirror || old.demo !== settings.demo) segmentationFrame = null;
     writeJSON('settings.json', settings); scheduler.configure(settings, performance.now());
     if (old.displayId !== settings.displayId || old.fullscreen !== settings.fullscreen) placeOutput();
     if (!settings.robotEnabled || settings.demo || (robotRun ? !liveSceneEnabled(settings, robotRun.sceneId) : !settings.scenes.some(s => isLiveScene(s.id) && s.enabled))) {
@@ -268,6 +270,16 @@ app.whenReady().then(() => {
     // Keep the shared full packet intact for camera scenes and live scenes.
     const { points = [], calm = [], quiet = false, amount = 0 } = frame.motion || {};
     return { seq: frame.seq, at: frame.at, demo: frame.demo, boxes: frame.boxes, motion: { points, calm, quiet, amount } };
+  });
+  handle('segmentation-frame', () => audience, seq => {
+    const f = segmentationFrame;
+    return scheduler.active === 'afterglow' && f && f.activation === scheduler.activation && f.seq !== seq && Date.now() - f.at < 1200 ? f : null;
+  });
+  handle('publish-segmentation', () => engine, data => {
+    if (!data) { segmentationFrame = null; return true; }
+    if (scheduler.active !== 'afterglow' || data.activation !== scheduler.activation || data.demo !== settings.demo || data.cameraId !== settings.cameraId || data.mirror !== settings.mirror) return false;
+    if (!Number.isInteger(data.width) || !Number.isInteger(data.height) || data.width < 1 || data.height < 1 || data.width > 640 || data.height > 360 || data.pixels?.length !== data.width * data.height * 4 || data.fill?.length !== data.pixels.length || !Array.isArray(data.instances) || data.instances.length > 8 || !Number.isFinite(data.at) || Date.now() - data.at >= 1200) return false;
+    segmentationFrame = data; return true;
   });
   handle('preview', () => operator, () => Date.now() - (frame?.at || 0) < 2000 ? preview : '');
   handle('robot-frame', () => audience, seq => robotOutput && robotOutput.seq !== seq && Date.now() - robotOutput.at < 2000 ? robotOutput : null);

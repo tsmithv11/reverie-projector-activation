@@ -10,7 +10,7 @@ const { LIVE_SCENE_IDS, nextPlaylistScene } = require('../app/core/live-scenes.c
 
 test('existing playlists gain restyles without changing their order or toggles', () => {
   const old = ['garden', 'cartoon', 'heat', 'robots', 'lines', 'monsters', 'words'].map(id => ({ id, enabled: id === 'garden' }));
-  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, ...['animation3d', 'cyberpunk', 'claymation', 'ghibli25', 'monstersLiving'].map(id => ({ id, enabled: true }))]);
+  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, ...['animation3d', 'cyberpunk', 'claymation', 'ghibli25', 'monstersLiving', 'afterglow'].map(id => ({ id, enabled: true }))]);
 });
 
 test('the Lucy 2.5 Ghibli comparison appends to existing playlists and preserves saved choices', () => {

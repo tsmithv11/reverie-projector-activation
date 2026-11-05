@@ -12,3 +12,5 @@
 #output-width-controls[hidden]{display:none}#output-width-controls>label{display:block;font-size:11px;color:#8b7393;margin-top:15px}#output-extra-width{margin-top:8px;font-size:11px}
 
 .scene-art.ghibli25{background:linear-gradient(130deg,#dce8cb,#8bb9bd)}.scene-art.ghibli25 span{color:#374e61}
+
+.scene-art.afterglow{background:linear-gradient(135deg,#24152F,#433756)}.scene-art.afterglow:before{border-color:#FAA0D080}.scene-art.afterglow span{color:#FAA0D0;text-shadow:0 0 14px #FAA0D0,14px 3px 0 #7A9DDA,-14px 3px 0 #C49ED8}

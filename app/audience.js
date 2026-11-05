@@ -10,6 +10,9 @@ const brandLogo = new Image();
 brandLogo.src = 'brand/reverie-logo-white.svg';
 let brandLogoReady = false;
 brandLogo.decode().then(() => { brandLogoReady = true; }).catch(error => console.error('Reverie logo failed to load', error));
+const segmentationCanvas = document.createElement('canvas'), segmentationCtx = segmentationCanvas.getContext('2d');
+let segmentationLatest = null, segmentationSeq = -1, segmentationPulling = false;
+const segmentationKey = s => JSON.stringify([s.active, s.activation, s.settings.cameraId, s.settings.mirror, s.settings.demo]);
 const source = document.createElement('canvas'), sourceCtx = source.getContext('2d');
 const robotCanvas = document.createElement('canvas'), robotCtx = robotCanvas.getContext('2d');
 const previous = document.createElement('canvas'), previousCtx = previous.getContext('2d');
@@ -22,6 +25,7 @@ const isBayScene = id => id === 'monsters' || id === 'monstersLiving';
 const isArtworkScene = id => isBayScene(id) || id === 'garden';
 const adaptive = new AdaptiveQuality(), host = new SceneHost(registry, (id, phase) => { failure = `Scene ${id} failed during ${phase}; isolated fallback active`; });
 function receiveState(s) {
+  if (segmentationKey(s) !== segmentationKey(state)) { segmentationLatest = null; segmentationSeq = -1; segmentationCanvas.width = segmentationCanvas.height = 1; }
   // Refetch even the current packet when changing between analysis and video.
   if (isArtworkScene(state.active) !== isArtworkScene(s.active)) { seq = -1; latest = null; }
   state = s;
@@ -58,6 +62,18 @@ async function pull() {
     }
   } catch {} finally { pulling = false; }
 }
+async function pullSegmentation() {
+  if (segmentationPulling || state.active !== 'afterglow') return;
+  segmentationPulling = true; const key = segmentationKey(state);
+  try {
+    const f = await api.segmentation(segmentationSeq);
+    if (!f || key !== segmentationKey(state) || f.activation !== state.activation || f.cameraId !== state.settings.cameraId || f.demo !== state.settings.demo || f.mirror !== state.settings.mirror) return;
+    if (segmentationCanvas.width !== f.width || segmentationCanvas.height !== f.height) { segmentationCanvas.width = f.width; segmentationCanvas.height = f.height; }
+    segmentationCtx.putImageData(new ImageData(new Uint8ClampedArray(f.pixels), f.width, f.height), 0, 0);
+    // Keep pixels only in the canvas after upload; masks have their own sequence.
+    const { pixels, ...sample } = f; segmentationLatest = sample; segmentationSeq = f.seq;
+  } catch {} finally { segmentationPulling = false; }
+}
 function renderCameraPortal(context) {
   const { frame, w, h } = context;
   if (frame) camera(ctx, frame, w, h);
@@ -92,13 +108,13 @@ function renderArtworkPortal(context) {
 function finishComposition(w, h, cameraLive) {
   // Every world shares the reference silhouette, with its own fixed rotation.
   ctx.save();
-  const cameraScene = ['heat', 'lines', 'words'].includes(state.active) || isLiveScene(state.active);
-  const wash = reverieGradient(ctx, w, h, cameraScene ? .6 : 85 / 255, cameraScene ? .6 : 68 / 255);
+  const cameraScene = ['heat', 'lines', 'words', 'afterglow'].includes(state.active) || isLiveScene(state.active);
+  const wash = reverieGradient(ctx, w, h, cameraScene ? .6 : state.active === 'monstersLiving' ? .62 : 85 / 255, cameraScene ? .6 : state.active === 'monstersLiving' ? .50 : 68 / 255);
   if (cameraScene || isBayScene(state.active)) { ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); polygonPath(ctx, portal.inner); ctx.fill('evenodd'); }
   const border = ctx.createLinearGradient(0, 0, w, h);
   border.addColorStop(0, REVERIE_PALETTE.pink); border.addColorStop(.5, REVERIE_PALETTE.orchid); border.addColorStop(1, REVERIE_PALETTE.lilac);
   ctx.fillStyle = border; ctx.beginPath(); polygonPath(ctx, portal.outer); polygonPath(ctx, portal.inner); ctx.fill('evenodd');
-  if (!isArtworkScene(state.active) && state.active !== 'words') {
+  if (!isArtworkScene(state.active) && !['words', 'afterglow'].includes(state.active)) {
     ctx.save(); ctx.beginPath(); polygonPath(ctx, portal.inner); ctx.clip();
     const shade = ctx.createLinearGradient(0, h * .66, 0, h); shade.addColorStop(0, '#27143100'); shade.addColorStop(1, '#271431d9'); ctx.fillStyle = shade; ctx.fillRect(0, h * .66, w, h * .34);
     ctx.restore();
@@ -118,7 +134,7 @@ function tick(now) {
   deadline = (deadline || now) + 1000 / 30;
   if (deadline < now) deadline = now + 1000 / 30;
   const dt = Math.min(.1, (now - (last || now)) / 1000); last = now;
-  pull(); pullRobot();
+  pull(); pullRobot(); pullSegmentation();
   const quality = adaptive.level;
   const area = outputArea(state.settings, innerWidth, innerHeight, devicePixelRatio);
   const nextAreaKey = `${area.x}:${area.y}:${area.width}:${area.height}`;
@@ -138,7 +154,9 @@ function tick(now) {
   const robotLive = robotLatest && Date.now() - robotLatest.at < 2000 && state.cloud.ready && state.cloud.sceneId === state.active;
   let analysis = live ? { boxes: latest.boxes, motion: latest.motion } : { boxes: [], motion: { points: [], calm: [], amount: 0 } };
   if (live && !isArtworkScene(state.active)) analysis = fitCameraAnalysis(analysis, latest.width, latest.height, w, h);
-  const context = { w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: live && !isArtworkScene(state.active) ? source : null, analysis, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
+  const segmentLive = state.active === 'afterglow' && segmentationLatest && Date.now() - segmentationLatest.at < 1200;
+  analysis.segmentation = segmentLive ? segmentationLatest : null;
+  const context = { visionState: state.camera.segmentation, w, h, time: now / 1000, dt, quality, intensity: state.settings.intensity, frame: segmentLive ? segmentationCanvas : live && !isArtworkScene(state.active) ? source : null, analysis, robotVideo: robotLive ? robotCanvas : null, demo: latest?.demo || false };
   if (host.id !== state.active || activation !== state.activation) {
     if (!isArtworkScene(state.active)) artworkCanvas.width = artworkCanvas.height = 1;
     previous.width = w; previous.height = h; previousCtx.drawImage(canvas, 0, 0);
@@ -147,7 +165,7 @@ function tick(now) {
   ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
   // Artwork scenes remain alive without camera packets. Only interaction needs them.
   const artworkOnly = isArtworkScene(state.active);
-  const visible = !!state.active && (artworkOnly || (isLiveScene(state.active) ? robotLive : live));
+  const visible = !!state.active && (artworkOnly || state.active === 'afterglow' || (isLiveScene(state.active) ? robotLive : live));
   if (!visible) paintBackground(ctx, w, h);
   else if (!(artworkOnly ? renderArtworkPortal(context) : renderCameraPortal(context))) { paintBackground(ctx, w, h); if (!artworkOnly) camera(ctx, source, w, h, .5); }
   finishComposition(w, h, live);

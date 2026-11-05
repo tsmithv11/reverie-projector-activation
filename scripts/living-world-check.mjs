@@ -43,14 +43,28 @@ try {
   await app.evaluate(({BrowserWindow})=>{const fixture=new BrowserWindow({width:960,height:540,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});fixture.loadURL('reverie://app/living-world-check.html');});
   let fixture;
   for(let i=0;i<100;i++){fixture=app.windows().find(w=>w.url().endsWith('/living-world-check.html'));if(fixture)break;await wait(50);}
-  assert(fixture);await fixture.waitForFunction(()=>window.scene?.background?.naturalWidth && Object.keys(scene.sprites).length===6);
+  assert(fixture);await fixture.waitForFunction(()=>window.scene?.puppets && scene.artwork?.mode==='painted-reference');
   await fixture.evaluate(()=>step(.5));
-  // Capture the exact same live body at half and full eye closure; the atlas
-  // frame and silhouette remain fixed throughout the blink.
+  // Check the drawn facial expression at partial eye closure.
   await fixture.evaluate(()=>{scene.creatures[0].blink=.65;render();});await fixture.screenshot({path:'test-results/living-world-blink.png'});
   await fixture.evaluate(()=>{scene.creatures[0].blink=0;render();});
-  const gpu=await fixture.evaluate(()=>({working:!!scene.puppets.gl,error:scene.puppets.error||'',frames:Object.fromEntries(Object.entries(scene.sprites).map(([id,s])=>[id,s.frames[0]]))}));
-  assert(gpu.working,gpu.error);
+  const rig=await fixture.evaluate(()=>({mode:scene.puppets.mode,environment:scene.artwork.mode,
+    characters:scene.creatures.length,connectedAtlas:scene.images.cast.naturalWidth,
+    gpu:!!scene.puppets.gl,error:scene.puppets.error||''}));
+  assert.equal(rig.mode,'connected-painted-mesh');assert.equal(rig.environment,'painted-reference');
+  assert.equal(rig.characters,6);assert(rig.connectedAtlas>1000);assert(rig.gpu,rig.error);
+  const idleWater=await fixture.evaluate(()=>{
+    const ctx=canvas.getContext('2d'),before=scene.animationTime;
+    render();const a=ctx.getImageData(0,0,960,540).data;
+    scene.animationTime+=1;scene.water.time+=1;render();const b=ctx.getImageData(0,0,960,540).data;
+    const difference=(x,y,w,h)=>{let changed=0,total=0;for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++){
+      const k=(j*960+i)*4;if(Math.abs(a[k]-b[k])+Math.abs(a[k+1]-b[k+1])+Math.abs(a[k+2]-b[k+2])>8)changed++;total++;
+    }return changed/total;};
+    const result={water:difference(350,475,280,55),sky:difference(5,5,100,25),rock:difference(525,330,20,40)};
+    scene.animationTime=before;scene.water.time-=1;render();return result;
+  });
+  assert(idleWater.water>.015,'painted foreground crests must move while idle');
+  assert.equal(idleWater.sky,0);assert.equal(idleWater.rock,0);
   await fixture.screenshot({path:'test-results/living-world-idle.png'});
   await fixture.evaluate(()=>step(5));await fixture.screenshot({path:'test-results/living-world-peek.png'});
   await fixture.evaluate(()=>step(1.2,true));await fixture.screenshot({path:'test-results/living-world-active.png'});
@@ -70,16 +84,16 @@ try {
       recorder.stop();await done;stream.getTracks().forEach(t=>t.stop());
       return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(new Blob(chunks,{type:'video/webm'}));});
     });
-    await writeFile('test-results/living-world-preview.webm',Buffer.from(video,'base64'));
+    await writeFile('test-results/living-world-painted-preview.webm',Buffer.from(video,'base64'));
   }
-  await fixture.evaluate(()=>{scene.puppets.gl.getExtension('WEBGL_lose_context').loseContext();scene.artwork.gl.getExtension('WEBGL_lose_context').loseContext();});
-  await wait(50);await fixture.evaluate(()=>step(1));await fixture.screenshot({path:'test-results/living-world-fallback.png'});
+  await fixture.evaluate(()=>step(1));await fixture.screenshot({path:'test-results/living-world-settled.png'});
+  assert.equal(await fixture.evaluate(()=>!!scene.artwork.gl),false,'the reference environment is never displaced');
   await fixture.evaluate(()=>{scene.cleanup();if(scene.creatures.length || scene.water.rings.length || scene.puppets)throw Error('cleanup leaked');});
   // A camera outage must leave the local world alive, with no camera fallback.
   await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('frame');ipcMain.handle('frame',()=>null);});
   await wait(7500);const lost=await operator.evaluate(()=>installation.state());assert.equal(lost.rendering.failure,'');assert.equal(lost.rendering.particles,0);assert(lost.rendering.fps>20);
   assert.equal(await audience.evaluate(()=>window.cameraUploads),0);
   assert.equal(errors.length,0,JSON.stringify(errors));
-  const result={high:high.rendering,low:low.rendering,cameraLost:lost.rendering,gpu,perf,errors};
+  const result={high:high.rendering,low:low.rendering,cameraLost:lost.rendering,rig,idleWater,perf,errors};
   await writeFile('test-results/living-world-check.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
 } finally {clearTimeout(watchdog);await app.close();await Promise.all(fixtureFiles.map(p=>rm(p,{force:true})));}

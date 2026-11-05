@@ -10,7 +10,8 @@ const SCENES = [
   { id: 'cyberpunk', name: 'Cyberpunk neon anime', color: '#e66bda' },
   { id: 'claymation', name: 'Claymation', color: '#d6a283' },
   { id: 'ghibli25', name: 'Studio Ghibli · Lucy 2.5', color: '#8bb9bd' },
-  { id: 'monstersLiving', name: 'Small wonderful things · Living world', color: '#b4b3f6' }
+  { id: 'monstersLiving', name: 'Small wonderful things · Living world', color: '#b4b3f6' },
+  { id: 'afterglow', name: 'Afterglow', color: '#FAA0D0' }
 ];
 const defaults = { cameraId: '', displayId: '', displayFormat: '16:9', outputMapping: 'screen', outputOffsetX: 0, outputOffsetY: 0, outputExtraWidth: 20, duration: 60, quality: 'auto', intensity: 0.7, mirror: true, demo: false, fullscreen: true, robotEnabled: false, scenes: SCENES.map(s => ({ id: s.id, enabled: true })) };
 function sanitize(input = {}) {

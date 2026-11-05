@@ -7,5 +7,6 @@ release/
 .runtime/
 test-results/
 assets/models/*.tflite
+assets/models/*.task
 .DS_Store
 *.log

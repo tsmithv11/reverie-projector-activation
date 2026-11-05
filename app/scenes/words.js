@@ -1,12 +1,13 @@
-import { Scene, PALETTE } from './base.js';
+import { Scene } from './base.js';
+import { REVERIE_PALETTE } from '../core/composition.js';
 
 const TEXT = 'Reverie 2026';
 const rgb = hex => [1, 3, 5].map(start => parseInt(hex.slice(start, start + 2), 16));
 const mix = (a, b, t) => a.map((channel, i) => Math.round(channel + (b[i] - channel) * t));
-const blue = rgb(PALETTE.blue), purple = rgb(PALETTE.purple);
+const blue = rgb(REVERIE_PALETTE.blue);
 const stops = [
-  [0, mix(purple, blue, .78)], [.2, blue],
-  [.62, rgb(PALETTE.pink)], [1, rgb(PALETTE.lavender)]
+  [0, blue], [.2, blue], [.42, rgb(REVERIE_PALETTE.lilac)],
+  [.62, rgb(REVERIE_PALETTE.pink)], [1, rgb(REVERIE_PALETTE.firstLight)]
 ];
 const colors = Array.from({ length: 256 }, (_, i) => {
   const value = i / 255, end = stops.findIndex(stop => stop[0] >= value);
@@ -94,8 +95,8 @@ export default class Words extends Scene {
     this.resize(w, h, quality);
     const { energy, cols, rows } = this.field, data = this.pixels.data;
     for (let i = 0; i < energy.length; i++) {
-      // A quiet diagonal wash gives the resting typography depth. It is static:
-      // every change in color still comes from the audience's actual movement.
+      // Resting values stay within the exact Horizon Blue stop. The static
+      // diagonal offset shapes highlights only when the audience moves.
       const rest = .025 + .04 * ((i % cols) / cols + Math.floor(i / cols) / rows) / 2;
       const color = colors[Math.min(255, Math.round((rest + energy[i] * (1 - rest)) * 255))];
       const p = i * 4;
@@ -108,7 +109,7 @@ export default class Words extends Scene {
     ink.imageSmoothingEnabled = true;
     ink.drawImage(this.color, 0, 0, w, h);
     ink.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = PALETTE.purple; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = REVERIE_PALETTE.deep; ctx.fillRect(0, 0, w, h);
     ctx.drawImage(this.ink, 0, 0);
   }
   deactivate() { this.field?.clear(); }

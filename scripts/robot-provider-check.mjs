@@ -1,11 +1,16 @@
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { CARTOON_PROMPT } from '../app/core/live-scenes.cjs';
 
-const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
-const expectedModel = sceneId === 'cartoon' ? 'lucy-restyle-2' : 'lucy-2.5';
+const sceneId = process.argv.find(arg => arg.startsWith('--scene='))?.slice(8) || (process.argv.includes('--cartoon') ? 'cartoon' : 'robots');
+const prompts = { robots: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.', cartoon: CARTOON_PROMPT, animation3d: '3D animation style', cyberpunk: 'Cyberpunk neon anime style', claymation: 'Transform the entire scene into handcrafted claymation. Make every person, object, and background out of sculpted modeling clay, with visible fingerprints, soft rounded shapes, matte clay textures, and a stop-motion animation look. Preserve the original composition and movement.' };
+assert(sceneId in prompts, 'Unknown test scene');
+const expectedModel = sceneId === 'robots' ? 'lucy-2.5' : 'lucy-restyle-2';
 const scenarios = ['missing-keys', 'fal-only', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live'];
-for (const scenario of scenarios) {
+const requestedScenario = process.argv.find(arg => arg.startsWith('--scenario='))?.slice(11);
+assert(!requestedScenario || scenarios.includes(requestedScenario), 'Unknown test scenario');
+for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
   const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/providers-${scenario}-${Date.now()}`) } });
   const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 30000);
   let sockets = 0, closed = false;
@@ -29,7 +34,7 @@ for (const scenario of scenarios) {
       ws.onMessage(message => {
         const data = JSON.parse(String(message));
         if (data.type === 'prompt') {
-          assert.match(data.prompt, sceneId === 'cartoon' ? /entire scene.*2D cartoon/ : /robot/);
+          assert.equal(data.prompt, prompts[sceneId]);
           assert.equal(data.enhance_prompt, false);
           if (scenario === 'cancel-fallback') ws.send(JSON.stringify({ type: 'error', error: 'Service unavailable' }));
         }
@@ -71,15 +76,28 @@ for (const scenario of scenarios) {
       if (!['missing-keys', 'fal-only'].includes(scenario)) await window.installation.saveKey('fake-decart-key', 'decart');
       if (!['missing-keys', 'decart-only'].includes(scenario)) await window.installation.saveKey('fake-fal-key', 'fal');
       await window.installation.configure({ robotEnabled: true, duration: 60 });
-      await window.installation.command('generate-robot', sceneId);
+      if (scenario !== 'decart-live') await window.installation.command('generate-robot', sceneId);
     }, { scenario, sceneId });
+    if (scenario === 'decart-live') {
+      await operator.evaluate(() => window.installation.configure({ quality: 'low' }));
+      await waitState(state => state.camera.width === 480);
+      assert.equal(await operator.locator('.scene-card').count(), 10);
+      assert.equal(await operator.locator('#live-scene option').count(), 5);
+      await operator.selectOption('#live-scene', sceneId);
+      await operator.click('#generate-robot');
+    }
     if (scenario === 'cancel-fallback') {
       await waitState(state => state.cloud.closing);
       await operator.evaluate(async sceneId => { const state = await window.installation.state(); await window.installation.configure({ scenes: state.settings.scenes.map(scene => ({ ...scene, enabled: scene.id === sceneId ? false : scene.enabled })) }); }, sceneId);
     } else if (scenario === 'decart-live') {
       const robot = await windowFor('robot');
       await robot.waitForFunction(() => globalThis.testCaptureSize);
-      assert.deepEqual(await robot.evaluate(() => globalThis.testCaptureSize), [1280, sceneId === 'cartoon' ? 704 : 720]);
+      assert.deepEqual(await robot.evaluate(() => globalThis.testCaptureSize), [1280, sceneId === 'robots' ? 720 : 704]);
+      await waitState(state => state.camera.width === 1280 && state.camera.height === 720);
+      assert.deepEqual(await robot.evaluate(async () => {
+        const frame = await window.installation.frame(-1);
+        return [frame.width, frame.height, frame.pixels.length];
+      }), [1280, 720, 1280 * 720 * 4], 'Lucy receives real 720p camera packets even at low projector quality');
       // Synthetic output exercises the same main/audience frame acknowledgement
       // boundary while the actual Decart SDK is awaiting mocked signaling.
       await robot.evaluate(async () => {
@@ -94,10 +112,12 @@ for (const scenario of scenarios) {
       await waitState(state => state.cloud.ready);
       const live = await operator.evaluate(() => window.installation.state());
       assert.equal(live.cloud.provider, 'decart'); assert.equal(live.active, sceneId); assert.equal(live.cloud.count, 1);
-      assert.match(live.cloud.display, sceneId === 'cartoon' ? /Lucy Restyle 2/ : /Lucy 2\.5/);
-      await operator.evaluate(() => window.installation.command('next'));
+      assert.match(live.cloud.display, sceneId === 'robots' ? /Lucy 2\.5/ : /Lucy Restyle 2/);
+      if (sceneId === 'claymation') await operator.screenshot({ path: 'test-results/restyles-operator.png', fullPage: true });
+      await operator.evaluate(() => window.installation.command('select', 'heat'));
     }
     await waitState(state => !state.cloud.streaming && !state.cloud.closing);
+    if (scenario === 'decart-live') await waitState(state => state.camera.width === 480);
     const state = await operator.evaluate(() => window.installation.state());
     const expected = ['missing-keys', 'fal-only'].includes(scenario) ? [] : ['decart'];
     assert.deepEqual(await app.evaluate(() => globalThis.providerTokenCalls), expected);

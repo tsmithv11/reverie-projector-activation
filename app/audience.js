@@ -1,10 +1,10 @@
 import { registry } from './scenes/index.js';
 import { SceneHost } from './core/scene-host.js';
 import { AdaptiveQuality } from './core/performance.js';
-import { outputSize, fitCameraAnalysis } from './core/display.js';
+import { outputSize, outputArea, fitCameraAnalysis } from './core/display.js';
 import { camera } from './scenes/base.js';
 import { isLiveScene } from './core/live-scenes.cjs';
-import { LOGO_BOTTOM, portalGeometry, polygonPath, artworkTransform, paintBackground, paintTransition } from './core/composition.js';
+import { LOGO_BOTTOM, REVERIE_PALETTE, portalGeometry, polygonPath, artworkTransform, reverieGradient, paintBackground, paintTransition } from './core/composition.js';
 const api = window.installation, canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d', { alpha: false });
 const brandLogo = new Image();
 brandLogo.src = 'brand/reverie-logo-white.svg';
@@ -17,14 +17,17 @@ const artworkCanvas = document.createElement('canvas'), artworkCtx = artworkCanv
 artworkCanvas.width = artworkCanvas.height = 1;
 let state = await api.state(), latest = null, pulling = false, robotLatest = null, robotPulling = false, robotSeq = -1, robotSession = null, seq = -1;
 let last = 0, deadline = 0, frames = 0, lastReport = performance.now(), fps = 0, transitionAt = -10000, failure = '', activation = -1;
-let portal, portalKey;
+let portal, portalKey, areaKey;
 const isArtworkScene = id => id === 'monsters' || id === 'garden';
 const adaptive = new AdaptiveQuality(), host = new SceneHost(registry, (id, phase) => { failure = `Scene ${id} failed during ${phase}; isolated fallback active`; });
 function receiveState(s) {
   // Refetch even the current packet when changing between analysis and video.
   if (isArtworkScene(state.active) !== isArtworkScene(s.active)) { seq = -1; latest = null; }
   state = s;
-  canvas.style.objectFit = s.settings.displayFormat === 'fill' ? 'fill' : 'contain';
+  // The wall's width trim stretches the complete 4:3 picture to its right edge;
+  // contain would undo the correction by leaving equal strips on both sides.
+  canvas.style.objectFit = s.settings.displayFormat === 'fill' || (s.settings.outputMapping === 'wall-1392' && s.settings.displayFormat === '4:3') ? 'fill' : 'contain';
+  document.body.classList.toggle('wall-output', s.settings.outputMapping === 'wall-1392');
   if (s.cloud.sessionId !== robotSession) { robotSession = s.cloud.sessionId; robotLatest = null; robotSeq = -1; }
 }
 api.onState(receiveState);
@@ -89,12 +92,10 @@ function finishComposition(w, h, cameraLive) {
   // Every world shares the reference silhouette, with its own fixed rotation.
   ctx.save();
   const cameraScene = ['heat', 'lines', 'words'].includes(state.active) || isLiveScene(state.active);
-  const wash = ctx.createLinearGradient(0, 0, w, h);
-  wash.addColorStop(0, cameraScene ? '#ff8fcf99' : '#ffa0d055');
-  wash.addColorStop(1, cameraScene ? '#627aeb99' : '#8272db44');
+  const wash = reverieGradient(ctx, w, h, cameraScene ? .6 : 85 / 255, cameraScene ? .6 : 68 / 255);
   if (cameraScene || state.active === 'monsters') { ctx.fillStyle = wash; ctx.beginPath(); ctx.rect(0, 0, w, h); polygonPath(ctx, portal.inner); ctx.fill('evenodd'); }
   const border = ctx.createLinearGradient(0, 0, w, h);
-  border.addColorStop(0, '#ef8bc8'); border.addColorStop(1, '#ba79c2');
+  border.addColorStop(0, REVERIE_PALETTE.pink); border.addColorStop(.5, REVERIE_PALETTE.orchid); border.addColorStop(1, REVERIE_PALETTE.lilac);
   ctx.fillStyle = border; ctx.beginPath(); polygonPath(ctx, portal.outer); polygonPath(ctx, portal.inner); ctx.fill('evenodd');
   if (state.active !== 'monsters' && state.active !== 'garden' && state.active !== 'words') {
     ctx.save(); ctx.beginPath(); polygonPath(ctx, portal.inner); ctx.clip();
@@ -118,7 +119,13 @@ function tick(now) {
   const dt = Math.min(.1, (now - (last || now)) / 1000); last = now;
   pull(); pullRobot();
   const quality = adaptive.level;
-  const { width: w, height: h } = outputSize(state.settings.displayFormat, quality, innerWidth * devicePixelRatio, innerHeight * devicePixelRatio);
+  const area = outputArea(state.settings, innerWidth, innerHeight, devicePixelRatio);
+  const nextAreaKey = `${area.x}:${area.y}:${area.width}:${area.height}`;
+  if (areaKey !== nextAreaKey) {
+    Object.assign(canvas.style, { left: `${area.x}px`, top: `${area.y}px`, width: `${area.width}px`, height: `${area.height}px` });
+    areaKey = nextAreaKey;
+  }
+  const { width: w, height: h } = outputSize(state.settings.displayFormat, quality, area.width * devicePixelRatio, area.height * devicePixelRatio);
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w; canvas.height = h;
     // A new opaque canvas starts black; seed it before any transition snapshot.
@@ -152,7 +159,8 @@ document.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'f') api.command('fullscreen');
   if (e.key === ' ') { e.preventDefault(); api.command('pause'); }
   if (e.key === 'ArrowRight') api.command('next');
-  if (/^[1-9]$/.test(e.key) && state.scenes[Number(e.key) - 1]) api.command('select', state.scenes[Number(e.key) - 1].id);
+  const sceneIndex = e.key === '0' ? 9 : Number(e.key) - 1;
+  if (/^[0-9]$/.test(e.key) && state.scenes[sceneIndex]) api.command('select', state.scenes[sceneIndex].id);
 });
 window.addEventListener('beforeunload', () => host.cleanup());
 requestAnimationFrame(tick);

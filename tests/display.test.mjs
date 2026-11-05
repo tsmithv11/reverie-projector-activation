@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { outputSize, coverRect, fitCameraAnalysis } from '../app/core/display.js';
+import { outputSize, outputArea, coverRect, fitCameraAnalysis } from '../app/core/display.js';
 import { camera } from '../app/scenes/base.js';
 const { sanitize } = createRequire(import.meta.url)('../app/core/settings.cjs');
 const close = (actual, expected) => assert(Math.abs(actual - expected) < 1e-9, `${actual} ≈ ${expected}`);
@@ -40,6 +40,60 @@ test('fill follows native 4:3 and widescreen outputs and caps larger or portrait
     assert(Math.abs(size.height - size.width * 1440 / 3440) < 2);
   }
   assert.deepEqual(outputSize('fill', 1, 0, 0), { width: 1600, height: 900 });
+});
+
+test('LED wall uses its physical 1392×1044 region instead of the larger reported desktop', () => {
+  const settings = sanitize({ outputMapping: 'wall-1392', outputExtraWidth: 0, displayFormat: '4:3' });
+  for (const dpr of [1, 1.25, 2]) {
+    const area = outputArea(settings, 1920 / dpr, 1600 / dpr, dpr);
+    assert.equal(area.x, 0); assert.equal(area.y, 0);
+    close(area.width * dpr, 1392); close(area.height * dpr, 1044);
+    for (const quality of [0, 1, 2]) {
+      const size = outputSize('4:3', quality, area.width * dpr, area.height * dpr);
+      close(size.width / size.height, area.width / area.height);
+    }
+    assert.deepEqual(outputSize('fill', 2, area.width * dpr, area.height * dpr), { width: 1392, height: 1044 });
+  }
+  assert.deepEqual(outputArea(sanitize(), 1920, 1600), { x: 0, y: 0, width: 1920, height: 1600 });
+});
+
+test('wall offsets use physical pixels and keep the complete picture in bounds', () => {
+  const settings = sanitize({ outputMapping: 'wall-1392', outputExtraWidth: 0, outputOffsetX: 264, outputOffsetY: 278 });
+  assert.deepEqual(outputArea(settings, 1920, 1600), { x: 264, y: 278, width: 1392, height: 1044 });
+  assert.deepEqual(outputArea(settings, 960, 800, 2), { x: 132, y: 139, width: 696, height: 522 });
+  assert.deepEqual(outputArea({ ...settings, outputOffsetX: 9999, outputOffsetY: 9999 }, 1920, 1600), { x: 528, y: 556, width: 1392, height: 1044 });
+  assert.deepEqual(outputArea({ ...settings, outputOffsetX: 0, outputOffsetY: 0 }, 800, 600), { x: 0, y: 0, width: 800, height: 600 });
+  assert.deepEqual(outputArea(settings, 1392, 1044), { x: 0, y: 0, width: 1392, height: 1044 });
+  assert.deepEqual(outputArea({ ...settings, outputMapping: 'screen' }, 800, 600), { x: 0, y: 0, width: 800, height: 600 });
+});
+
+test('wall mapping and offsets persist, with safe defaults for old or invalid settings', () => {
+  const settings = sanitize({ outputMapping: 'wall-1392', outputExtraWidth: 0, outputOffsetX: 264, outputOffsetY: 278 });
+  assert.deepEqual(sanitize(JSON.parse(JSON.stringify(settings))), settings);
+  assert.equal(sanitize().outputMapping, 'screen');
+  const invalid = sanitize({ outputMapping: 'unknown', outputOffsetX: -10, outputOffsetY: Infinity });
+  assert.equal(invalid.outputMapping, 'screen'); assert.equal(invalid.outputOffsetX, 0); assert.equal(invalid.outputOffsetY, 0);
+  assert.equal(sanitize({ outputOffsetX: 99999 }).outputOffsetX, 16384);
+  assert.equal(sanitize({ outputOffsetY: '23.6' }).outputOffsetY, 24);
+});
+
+test('right-edge correction adds 20 physical pixels without moving the left edge or changing height', () => {
+  const settings = sanitize({ outputMapping: 'wall-1392', outputOffsetX: 264, outputOffsetY: 278 });
+  assert.equal(settings.outputExtraWidth, 20, 'existing saved wall settings pick up the correction');
+  for (const dpr of [1, 1.25, 2]) {
+    const before = outputArea({ ...settings, outputExtraWidth: 0 }, 1920 / dpr, 1600 / dpr, dpr);
+    const after = outputArea(settings, 1920 / dpr, 1600 / dpr, dpr);
+    close(after.x, before.x); close(after.y, before.y); close(after.height, before.height);
+    close((after.width - before.width) * dpr, 20);
+    close(after.width * dpr, 1412); close(after.height * dpr, 1044);
+  }
+  assert.equal(sanitize(JSON.parse(JSON.stringify(settings))).outputExtraWidth, 20);
+  assert.equal(sanitize({ outputExtraWidth: 0 }).outputExtraWidth, 0, 'zero restores exact native width');
+  assert.equal(sanitize({ outputExtraWidth: -10 }).outputExtraWidth, 0);
+  assert.equal(sanitize({ outputExtraWidth: 999 }).outputExtraWidth, 200);
+  assert.equal(sanitize({ outputExtraWidth: NaN }).outputExtraWidth, 20);
+  const preview = outputArea(settings, 800, 600);
+  close(preview.width, 800); assert(preview.height <= 600); assert(preview.x >= 0 && preview.y >= 0);
 });
 
 test('camera, live video and contour pixels use a centered crop without stretching', () => {

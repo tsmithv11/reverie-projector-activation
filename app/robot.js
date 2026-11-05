@@ -2,6 +2,7 @@ import { decartModel, openDecartConnection } from './core/decart-connection.js';
 import { openLucySignaling } from './core/lucy-signaling.js';
 import { usableDimensions, usablePixels } from './core/robot-result.js';
 import { liveScene } from './core/live-scenes.cjs';
+import { coverRect } from './core/display.js';
 // This isolated service sends current camera frames and publishes current Lucy
 // video frames. There is no snapshot, JPEG cache, or substitute robot drawing.
 const api = window.installation;
@@ -94,7 +95,10 @@ try {
       inputSeq = f.seq; lastInput = Date.now();
       if (source.width !== f.width || source.height !== f.height) { source.width = f.width; source.height = f.height; }
       sourceCtx.putImageData(new ImageData(new Uint8ClampedArray(f.pixels), f.width, f.height), 0, 0);
-      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      // Restyle's 1280×704 frame is slightly wider than the 16:9 camera plane.
+      // Crop the edges uniformly instead of squeezing people's faces vertically.
+      const rect = coverRect(source.width, source.height, canvas.width, canvas.height);
+      ctx.drawImage(source, rect.x, rect.y, rect.width, rect.height);
       stream?.getVideoTracks()[0]?.requestFrame?.();
     } finally { inputBusy = false; }
   };

@@ -4,7 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 await mkdir('test-results', { recursive: true });
 const reports = [];
-const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
+const sceneId = process.argv.find(arg => arg.startsWith('--scene='))?.slice(8) || (process.argv.includes('--cartoon') ? 'cartoon' : 'robots');
 const requested = process.argv.slice(2).find(arg => !arg.startsWith('--'));
 for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 'connect-timeout', 'provider-busy', 'auto-slot']) {
   const profile = path.resolve(`test-results/robot-${scenario}-${Date.now()}`);
@@ -118,7 +118,7 @@ for (const scenario of requested ? [requested] : ['scene-exit', 'paused-limit', 
       await operator.evaluate(() => window.installation.command('next'));
       state = await operator.evaluate(() => window.installation.state());
       assert.notEqual(state.active, sceneId); assert(!state.cloud.ready); assert(!state.cloud.streaming); for (let i = 0; i < 30 && !robot.isClosed(); i++) await new Promise(r => setTimeout(r, 100)); assert(robot.isClosed());
-      await operator.evaluate(sceneId => window.installation.configure({ robotEnabled: false, scenes: ['robots','heat','monsters','lines','garden','cartoon'].map(id => ({ id, enabled: id === sceneId })) }), sceneId);
+      await operator.evaluate(async sceneId => { const state = await window.installation.state(); await window.installation.configure({ robotEnabled: false, scenes: state.settings.scenes.map(scene => ({ ...scene, enabled: scene.id === sceneId })) }); }, sceneId);
       state = await operator.evaluate(() => window.installation.state());
       assert.equal(state.active, null); assert(!state.cloud.ready);
     } else {

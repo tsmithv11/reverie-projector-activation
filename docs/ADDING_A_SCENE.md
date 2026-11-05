@@ -2,7 +2,7 @@
 
 1. Add a module under `app/scenes/`. It receives the existing shared camera and analysis; it must not open another camera.
 2. Import its constructor and add it to `registry` in `app/scenes/index.js`.
-3. Add `{id,name,color}` to `SCENES` in `app/core/settings.cjs`. The scheduler, persisted-setting reconciliation, playlist and controls automatically include it. Optional: add a tile symbol in `app/operator.js`. Numeric keyboard shortcuts cover the first nine scenes (seven currently registered).
+3. Add `{id,name,color}` to `SCENES` in `app/core/settings.cjs`. The scheduler, persisted-setting reconciliation, playlist and controls automatically include it. Optional: add a tile symbol in `app/operator.js`. Numeric keyboard shortcuts cover all ten registered scenes: 1–9, then 0 for the tenth.
 4. Run `npm run build`, try transitions, camera loss, both quality extremes and cleanup, then package again. Do not change the scheduler or capture pipeline.
 
 Example `app/scenes/ripples.js`:
@@ -41,6 +41,6 @@ export default class Ripples extends Scene {
 
 Register with `import Ripples from './ripples.js'` and `registry.ripples = Ripples`, plus `{ id: 'ripples', name: 'Ripples in the room', color: '#ffa0d0' }` in SCENES. The shared branding and transition are composed after your scene renders. All scenes use the reference trapezoid in `app/core/composition.js`; assign a distinct angle in `SCENE_ROTATIONS` for a new scene. The garden is fitted inside it with the shared pink-to-blue surround. The painted bay stays upright across the full output and receives an optional normalized `foregroundClip` polygon so only its characters and effects are confined to the opening. The outgoing scene fades completely to that gradient before the incoming scene appears. Artwork-only scenes must also opt into camera-independent rendering and exclude camera fallbacks in `audience.js`.
 
-Live Lucy effects also need an entry in `app/core/live-scenes.cjs` with an explicit model, display label and prompt. Their job carries a `sceneId` through token scoping and the direct Decart connection; only that scene becomes available after its video is decoded. They share credentials, spending limits, cooldown and one active connection.
+Live Lucy effects also need an entry in `app/core/live-scenes.cjs` with an explicit model, display label and prompt. Their job carries a `sceneId` through token scoping and the direct Decart connection; only that scene becomes available after its video is decoded. They share credentials, duration limits, failure backoff and one active connection. The operator live-scene selector is populated from the playlist automatically.
 
 Keep all arrays bounded. Use normalized positions; respect the quality/intensity inputs; do not retain camera packets. Dispose images, workers, timers and graphics resources in cleanup if you add any. An exception is isolated, but expensive synchronous work can still stall that renderer until the watchdog replaces it.

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { usableDimensions, usablePixels } from '../app/core/robot-result.js';
+import { coverRect } from '../app/core/display.js';
+import { decartModel } from '../app/core/decart-connection.js';
 
 const source = readFileSync(new URL('../app/robot.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const goodPixels = new Uint8ClampedArray(4096);
@@ -11,17 +13,17 @@ const blackPixels = new Uint8ClampedArray(4096), flatPixels = new Uint8ClampedAr
 
 // Run the actual isolated service with controlled decoded-frame callbacks and
 // a virtual clock. Provider traffic and camera capture never leave this test.
-async function videoService({ holdPublish = false } = {}) {
+async function videoService({ holdPublish = false, sceneId = 'robots', inputWidth = 1280, inputHeight = 720 } = {}) {
   let now = 1000, callback, connectionOptions, outputPixels = goodPixels, inputSeq = 0, releasePublish;
   let connections = 0, closes = 0, stoppedTracks = 0;
-  const failures = [], published = [], intervals = new Set();
+  const failures = [], published = [], draws = [], intervals = new Set();
   const stream = { getVideoTracks: () => [{ requestFrame() {} }], getTracks: () => [{ stop() { stoppedTracks++; } }] };
   const video = { videoWidth: 1280, videoHeight: 720, play: async () => {},
     requestVideoFrameCallback(fn) { assert.equal(callback, undefined, 'Only one frame callback may be queued'); callback = fn; } };
   const api = {
     onStop(fn) { this.stop = fn; }, closed() {}, stage() {},
-    job: async () => ({ id: 7, provider: 'decart', sceneId: 'robots' }), token: async () => 'fake-token',
-    frame: async () => ({ seq: ++inputSeq, width: 1, height: 1, pixels: new Uint8ClampedArray(4) }),
+    job: async () => ({ id: 7, provider: 'decart', sceneId }), token: async () => 'fake-token',
+    frame: async () => ({ seq: ++inputSeq, width: inputWidth, height: inputHeight, pixels: new Uint8ClampedArray(inputWidth * inputHeight * 4) }),
     publish: frame => { published.push(frame); return holdPublish ? new Promise(resolve => { releasePublish = resolve; }) : Promise.resolve(true); },
     complete: result => failures.push(result)
   };
@@ -30,18 +32,18 @@ async function videoService({ holdPublish = false } = {}) {
     document: {
       querySelector: () => video,
       createElement: () => ({ captureStream: () => stream, getContext: () => ({
-        fillRect() {}, drawImage() {}, putImageData() {}, getImageData: () => ({ data: outputPixels })
+        fillRect() {}, drawImage(...args) { draws.push(args); }, putImageData() {}, getImageData: () => ({ data: outputPixels })
       }) })
     },
     Date: { now: () => now }, Uint8ClampedArray, ImageData: class {},
-    usableDimensions, usablePixels, decartModel: () => ({ width: 1280, height: 720 }), liveScene: () => ({ prompt: 'robots' }),
+    usableDimensions, usablePixels, coverRect, decartModel, liveScene: () => ({ prompt: 'robots' }),
     openDecartConnection(options) { connections++; connectionOptions = options; return { close() { closes++; return Promise.resolve({ acknowledged: true }); } }; },
     setInterval: fn => { intervals.add(fn); return fn; }, clearInterval: fn => intervals.delete(fn), clearTimeout() {}
   });
   await vm.runInContext(`(async () => { ${source}\n})()`, context);
   await connectionOptions.onRemoteStream(stream);
   return {
-    failures, published,
+    failures, published, draws,
     get connections() { return connections; }, get closes() { return closes; }, get stoppedTracks() { return stoppedTracks; },
     get queued() { return !!callback; }, acknowledge() { releasePublish?.(true); },
     async frame({ after = 50, pixels = goodPixels, width = 1280, height = 720 } = {}) {
@@ -53,6 +55,23 @@ async function videoService({ holdPublish = false } = {}) {
     stop: () => api.stop({ id: 7 })
   };
 }
+
+test('Restyle input preserves face proportions at every shared-camera resolution', async () => {
+  for (const inputWidth of [480, 640, 960, 1280]) {
+    const inputHeight = inputWidth * 9 / 16;
+    const service = await videoService({ sceneId: 'cartoon', inputWidth, inputHeight });
+    const [, x, y, width, height] = service.draws[0];
+    assert.equal(width / inputWidth, height / inputHeight, 'Both axes must use the same scale');
+    assert.deepEqual([x, y, width, height], [0, -8, 1280, 720], 'Crop 8 pixels at top and bottom, never squash 720 into 704');
+    await service.stop();
+  }
+});
+
+test('Lucy 2.5 input still uses the full camera plane without cropping', async () => {
+  const service = await videoService();
+  assert.deepEqual(service.draws[0].slice(1), [0, 0, 1280, 720]);
+  await service.stop();
+});
 
 test('brief black, flat and invalid-dimension frames recover in the same live connection', async () => {
   const service = await videoService();

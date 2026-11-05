@@ -1,7 +1,7 @@
 const PROVIDER_NAMES = { decart: 'Decart', fal: 'FAL' };
 const PROVIDER_FAILURES = new Set(['AUTH_REJECTED', 'AUTH_NETWORK', 'AUTH_RESPONSE', 'FAL_CREDITS', 'FAL_RATE_LIMIT', 'FAL_SERVICE', 'DECART_CREDITS', 'DECART_RATE_LIMIT', 'DECART_SERVICE', 'SIGNALING', 'SIGNALING_BLOCKED', 'PEER_CONNECTION', 'VIDEO_STALLED', 'NO_VIDEO', 'INVALID_IMAGE', 'SESSION_BUSY', 'PROVIDER_ERROR', 'TIMEOUT', 'RENDERER_EXIT', 'CLIENT_ERROR']);
 // These audience scenes require a pinned realtime model and explicit control
-// of Lucy 2.5 self-anchoring. FAL does not document those controls for both
+// of Lucy 2.5 self-anchoring. FAL does not document those controls for all
 // scenes, so saved FAL credentials must not enable or back up this experience.
 function configuredProviders(keys) { return ['decart'].filter(provider => !!keys[provider]); }
 function backupProvider(run, code) {

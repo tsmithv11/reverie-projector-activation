@@ -2,9 +2,17 @@
 // Rotate in pixel space so the tapered silhouette survives every output format.
 const OUTER = [[80, 56], [249, 26], [299, 198], [22, 263]];
 const INNER = [[91, 69], [238, 44], [278, 184], [47, 241]];
-export const SCENE_ROTATIONS = Object.freeze({ heat: 16, robots: -6, monsters: 0, lines: 26, garden: 10, cartoon: 21, words: -12 });
+export const SCENE_ROTATIONS = Object.freeze({ heat: 16, robots: -6, monsters: 0, lines: 26, garden: 10, cartoon: 21, words: -12, animation3d: -18, cyberpunk: 30, claymation: 5 });
 export const TRANSITION_MS = 1400;
 export const LOGO_BOTTOM = .075;
+// Exact colors from the supplied Reverie brand palette, shared by the surround,
+// portal rim and Words in motion. Other scene artwork keeps its own colors.
+export const REVERIE_PALETTE = Object.freeze({
+  firstLight: '#FDCADB', pink: '#FAA0D0', orchid: '#E1A3D7', lilac: '#C49ED8',
+  blue: '#7A9DDA', deep: '#24152F', blush: '#F7B7DB', dawn: '#A8AEDB'
+});
+const BACKGROUND_COLORS = [REVERIE_PALETTE.firstLight, REVERIE_PALETTE.pink,
+  REVERIE_PALETTE.orchid, REVERIE_PALETTE.lilac, REVERIE_PALETTE.blue];
 
 function rotate(points, degrees) {
   const angle = degrees * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
@@ -43,10 +51,18 @@ export function artworkTransform(portal, w, h) {
     ux * box.x - uy * box.y, uy * box.x + ux * box.y];
 }
 
-export function paintBackground(ctx, w, h) {
+export function reverieGradient(ctx, w, h, startOpacity = 1, endOpacity = startOpacity) {
   const gradient = ctx.createLinearGradient(0, 0, w, h);
-  gradient.addColorStop(0, '#f5acd3'); gradient.addColorStop(.5, '#bea8df'); gradient.addColorStop(1, '#7297e5');
-  ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
+  BACKGROUND_COLORS.forEach((color, i) => {
+    const stop = i / (BACKGROUND_COLORS.length - 1);
+    const alpha = Math.round((startOpacity + (endOpacity - startOpacity) * stop) * 255).toString(16).padStart(2, '0');
+    gradient.addColorStop(stop, color + alpha);
+  });
+  return gradient;
+}
+
+export function paintBackground(ctx, w, h) {
+  ctx.fillStyle = reverieGradient(ctx, w, h); ctx.fillRect(0, 0, w, h);
 }
 
 export function paintTransition(ctx, previous, w, h, elapsed) {

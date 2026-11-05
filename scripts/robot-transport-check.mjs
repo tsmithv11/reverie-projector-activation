@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/transport-profile-${Date.now()}`) } });
 const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 60000);
 const sceneId = process.argv.includes('--cartoon') ? 'cartoon' : 'robots';
-const expectedPrompt = sceneId === 'cartoon' ? /entire scene.*2D cartoon/ : /robot/;
+const expectedPrompt = sceneId === 'cartoon' ? /^Studio Ghibli watercolor style\b/ : /robot/;
 let directPrompt;
 const useDecart = process.argv.includes('--decart-fallback');
 let decartSockets = 0, decartPrompts = 0, decartClosed = false;

@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 
 const mainURL = new URL('../app/main.cjs', import.meta.url);
 const require = createRequire(mainURL), source = readFileSync(mainURL, 'utf8');
+const { LIVE_SCENE_IDS } = require('../app/core/live-scenes.cjs');
 
 // Exercise the actual main-process IPC, scheduler and cleanup under a virtual
 // clock. No provider, camera, credentials or Electron process is used here.
@@ -103,20 +104,20 @@ test('Lucy starts off even if saved on, stays on past old limits, and resets onl
   assert.equal(app.state().settings.robotEnabled, false);
   app.step(120000); assert.equal(app.state().cloud.count, 0);
   app.configure({ robotEnabled: true, duration: 10 });
-  const seen = { robots: 0, cartoon: 0 }; let last;
+  const seen = Object.fromEntries(LIVE_SCENE_IDS.map(id => [id, 0])); let last;
   for (let i = 0; i < 3000; i++) {
     app.step(); const s = app.state();
     if (s.cloud.ready && s.active !== last && s.active in seen) seen[s.active]++;
     last = s.active;
     assert.equal(s.settings.robotEnabled, true);
   }
-  assert(seen.robots > 12 && seen.cartoon > 12, JSON.stringify(seen));
+  assert(Object.values(seen).every(count => count > 12), JSON.stringify(seen));
   assert(app.state().cloud.count > 40);
   const relaunched = await installation(app.saved);
   assert.equal(relaunched.state().settings.robotEnabled, false);
 });
 
-for (const sceneId of ['robots', 'cartoon']) test(`${sceneId} disconnects at its duration while paused but stays enabled for the next visit`, async () => {
+for (const sceneId of LIVE_SCENE_IDS) test(`${sceneId} disconnects at its duration while paused but stays enabled for the next visit`, async () => {
   const app = await installation();
   app.configure({ robotEnabled: true, duration: 10 });
   app.command('select', sceneId); app.step(); app.command('pause');
@@ -146,12 +147,12 @@ test('Lucy opens no background connection on local scenes, including paused idle
   assert.equal(app.state().active, 'garden'); assert(app.state().settings.robotEnabled);
 });
 
-test('both live scenes rotate when adjacent or alone; switching waits for cleanup and can be cancelled', async () => {
+test('all live scenes rotate when adjacent or alone; switching waits for cleanup and can be cancelled', async () => {
   const app = await installation();
-  app.configure({ robotEnabled: true, duration: 10, scenes: app.state().settings.scenes.map(s => ({ ...s, enabled: ['robots', 'cartoon'].includes(s.id) })) });
+  app.configure({ robotEnabled: true, duration: 10, scenes: app.state().settings.scenes.map(s => ({ ...s, enabled: LIVE_SCENE_IDS.includes(s.id) })) });
   const seen = new Set();
-  for (let i = 0; i < 90; i++) { app.step(); if (app.state().cloud.ready) seen.add(app.state().active); }
-  assert(seen.has('robots') && seen.has('cartoon')); assert(app.state().cloud.count >= 4);
+  for (let i = 0; i < 150; i++) { app.step(); if (app.state().cloud.ready) seen.add(app.state().active); }
+  assert(LIVE_SCENE_IDS.every(id => seen.has(id))); assert(app.state().cloud.count >= 4);
   const other = app.state().cloud.sceneId === 'robots' ? 'cartoon' : 'robots';
   const count = app.state().cloud.count;
   app.command('select', other);
@@ -176,7 +177,7 @@ test('provider failure never retries in the background while paused; explicit re
   assert(!app.state().cloud.streaming && !app.state().cloud.ready);
 });
 
-for (const sceneId of ['robots', 'cartoon']) test(`${sceneId} never falls back to FAL or enables with only a FAL key`, async () => {
+for (const sceneId of LIVE_SCENE_IDS) test(`${sceneId} never falls back to FAL or enables with only a FAL key`, async () => {
   const falOnly = await installation({}, { fal: 'fake-backup-key' });
   falOnly.configure({ robotEnabled: true }); falOnly.command('select', sceneId); falOnly.step();
   assert.equal(falOnly.state().cloud.count, 0); assert.equal(falOnly.state().cloud.state, 'missing-key');

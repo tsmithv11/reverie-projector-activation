@@ -1,8 +1,10 @@
 import { demoCrowd } from './core/demo.js';
 const api = window.installation;
-let settings = (await api.state()).settings;
+const initialState = await api.state();
+let settings = initialState.settings, cloudStreaming = initialState.cloud.streaming;
 const video = document.querySelector('video'), canvas = document.createElement('canvas'), small = document.createElement('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true }), sx = small.getContext('2d', { willReadFrequently: true });
+const detection = document.createElement('canvas'), detectionCtx = detection.getContext('2d', { willReadFrequently: true });
 small.width = 160; small.height = 90;
 let stream, opening = false, openEpoch = 0, nextOpen = 0, cameraState = 'starting', message = '', devices = [], boxes = [], detectionAt = 0, detectorState = 'starting', detectorMs = 0;
 let motion = { points: [], calm: [], amount: 0 }, detector, motionWorker, detectBusy = false, motionBusy = false, detectorReady = false, detectSent = 0, motionSent = 0, detectionRetry = 0;
@@ -52,7 +54,7 @@ async function connect() {
 }
 api.onState(s => {
   const changed = settings.cameraId !== s.settings.cameraId || settings.demo !== s.settings.demo || settings.mirror !== s.settings.mirror;
-  settings = s.settings; level = s.rendering.quality ?? 1;
+  settings = s.settings; level = s.rendering.quality ?? 1; cloudStreaming = s.cloud.streaming;
   if (changed) { stopCamera(); nextOpen = 0; initMotion(); }
 });
 navigator.mediaDevices.addEventListener('devicechange', () => { nextOpen = 0; listDevices(); });
@@ -66,7 +68,10 @@ setInterval(async () => {
     if (video.currentTime !== lastVideoTime) { lastAdvance = now; lastVideoTime = video.currentTime; }
     if (now - lastAdvance > 4500) { stopCamera(); cameraState = 'disconnected'; message = 'Camera stopped delivering frames; reconnecting'; nextOpen = now + 1000; return; }
   }
-  const width = [480, 640, 960][level];
+  const localWidth = [480, 640, 960][level];
+  // Keep real camera detail for Lucy even when the projector lowers its quality.
+  // Upscaling the local 360p frame to model size cannot recover small faces.
+  const width = cloudStreaming && !settings.demo ? 1280 : localWidth;
   // Always contain the sensor image within 16:9; all analysis uses this exact camera plane.
   if (canvas.width !== width) { canvas.width = width; canvas.height = width * 9 / 16; }
   const w = canvas.width, h = canvas.height;
@@ -85,8 +90,11 @@ setInterval(async () => {
     motionWorker.postMessage({ pixels, width: analysisWidth, height: analysisHeight, boxes, dt: Math.min(.5, (now - lastMotion) / 1000) }, [pixels.buffer]); lastMotion = now;
   }
   if (!settings.demo && detectorReady && !detectBusy && now - lastDetect > [650, 400, 300][level]) {
-    const pixels = ctx.getImageData(0, 0, w, h).data; detectBusy = true; detectSent = now;
-    detector.postMessage({ pixels, width: w, height: h, time: performance.now() }, [pixels.buffer]); lastDetect = now;
+    // Detection keeps its existing work budget and normalized camera coordinates.
+    if (detection.width !== localWidth) { detection.width = localWidth; detection.height = localWidth * 9 / 16; }
+    detectionCtx.drawImage(canvas, 0, 0, detection.width, detection.height);
+    const pixels = detectionCtx.getImageData(0, 0, detection.width, detection.height).data; detectBusy = true; detectSent = now;
+    detector.postMessage({ pixels, width: detection.width, height: detection.height, time: performance.now() }, [pixels.buffer]); lastDetect = now;
   }
   let preview;
   if (now - lastPreview > 1000) { preview = canvas.toDataURL('image/jpeg', .55); lastPreview = now; }

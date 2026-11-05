@@ -1,10 +1,14 @@
 // Scene identity controls the model, token scope and operator label together.
-const LIVE_SCENE_IDS = ['robots', 'cartoon'];
-const CARTOON_PROMPT = 'Transform the entire scene into a 2D cartoon with clean outlines, simple cel shading, and bright natural colors. Preserve the people, room, objects, composition, and movement.';
+const CARTOON_PROMPT = 'Studio Ghibli watercolor style with gentle hand-painted colors and clean, restrained linework. Preserve each person\'s identity, facial proportions, eye and mouth positions, expression, and natural anatomy. Keep faces consistent from frame to frame as people move. Preserve the number of people, their positions, and the original composition. Apply the style mainly through color, shading, and texture.';
 const LIVE_SCENES = {
   robots: { model: 'lucy-2.5', label: 'Lucy 2.5', prompt: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.' },
-  cartoon: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: CARTOON_PROMPT }
+  // Keep the existing cartoon ID so saved playlist order and toggles survive.
+  cartoon: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: CARTOON_PROMPT },
+  animation3d: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: '3D animation style' },
+  cyberpunk: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: 'Cyberpunk neon anime style' },
+  claymation: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: 'Transform the entire scene into handcrafted claymation. Make every person, object, and background out of sculpted modeling clay, with visible fingerprints, soft rounded shapes, matte clay textures, and a stop-motion animation look. Preserve the original composition and movement.' }
 };
+const LIVE_SCENE_IDS = Object.keys(LIVE_SCENES);
 function liveScene(id) {
   if (!LIVE_SCENE_IDS.includes(id)) throw Error('Unknown live scene');
   return LIVE_SCENES[id];

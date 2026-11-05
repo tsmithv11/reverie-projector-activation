@@ -11,6 +11,21 @@ export function outputSize(format, quality, viewportWidth, viewportHeight) {
   return { width: even(viewportWidth * scale), height: even(viewportHeight * scale) };
 }
 
+// LED processors can expose a larger desktop than the pixels wired to the wall.
+// Map into that active region in device pixels, independently of render quality.
+// Smaller windowed previews shrink uniformly; full-screen never enlarges it.
+export function outputArea(settings, viewportWidth, viewportHeight, pixelRatio = 1) {
+  if (settings.outputMapping !== 'wall-1392') return { x: 0, y: 0, width: viewportWidth, height: viewportHeight };
+  const dpr = Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
+  const width = viewportWidth * dpr, height = viewportHeight * dpr;
+  const extraWidth = Number.isFinite(settings.outputExtraWidth) ? Math.min(200, Math.max(0, settings.outputExtraWidth)) : 20;
+  const wallWidth = 1392 + extraWidth;
+  const scale = Math.min(1, width / wallWidth, height / 1044);
+  const w = wallWidth * scale, h = 1044 * scale;
+  const offset = (value, maximum) => Math.min(maximum, Math.max(0, Number(value) || 0));
+  return { x: offset(settings.outputOffsetX, width - w) / dpr, y: offset(settings.outputOffsetY, height - h) / dpr, width: w / dpr, height: h / dpr };
+}
+
 export function coverRect(sourceWidth, sourceHeight, width, height) {
   const scale = Math.max(width / sourceWidth, height / sourceHeight);
   const w = sourceWidth * scale, h = sourceHeight * scale;

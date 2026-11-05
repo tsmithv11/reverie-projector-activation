@@ -1,10 +1,17 @@
 import { isLiveScene, liveScene } from './core/live-scenes.cjs';
 const api = window.installation, $ = id => document.getElementById(id);
 let state = await api.state(), signature = '', deviceSignature = '';
-const icons = { heat: '⌗', robots: '♙', monsters: '☁', lines: '⌖', garden: '✳', cartoon: '✎', words: 'Reverie 2026' };
+const icons = { heat: '⌗', robots: '♙', monsters: '☁', lines: '⌖', garden: '✳', cartoon: '✎', words: 'Reverie 2026', animation3d: '◈', cyberpunk: 'ϟ', claymation: '●' };
 async function configure(patch) { try { state = await api.configure(patch); render(state); } catch { $('notice').textContent = 'Could not save settings. Check that the settings folder is writable.'; } }
 function sceneList(s) {
   const key = JSON.stringify(s.settings.scenes); if (key === signature) return; signature = key;
+  const selected = $('live-scene').value;
+  $('live-scene').replaceChildren();
+  for (const entry of s.settings.scenes.filter(scene => isLiveScene(scene.id))) {
+    const scene = s.scenes.find(item => item.id === entry.id);
+    option($('live-scene'), entry.id, `${scene.name} · ${liveScene(entry.id).label}`);
+  }
+  if (isLiveScene(selected)) $('live-scene').value = selected;
   $('scene-list').replaceChildren();
   s.settings.scenes.forEach((entry, index) => {
     const scene = s.scenes.find(item => item.id === entry.id), card = document.createElement('div'); card.className = 'scene-card'; card.dataset.id = entry.id;
@@ -24,6 +31,9 @@ function render(s) {
   const ds = JSON.stringify([s.camera.devices, s.displays]);
   if (ds !== deviceSignature) { deviceSignature = ds; $('camera').replaceChildren(); option($('camera'), '', 'Default camera'); for (const d of s.camera.devices || []) option($('camera'), d.id, d.label); if (s.settings.cameraId && !(s.camera.devices || []).some(d => d.id === s.settings.cameraId)) option($('camera'), s.settings.cameraId, 'Selected camera · disconnected'); $('display').replaceChildren(); option($('display'), '', 'Auto · first external display'); for (const d of s.displays) option($('display'), d.id, `${d.label} · ${d.width} × ${d.height}${d.primary ? ' · primary' : ''}`); }
   for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['display-format','displayFormat'],['quality','quality']]) if (document.activeElement !== $(id)) $(id).value = s.settings[key];
+  for (const [id, key] of [['output-mapping','outputMapping'],['output-offset-x','outputOffsetX'],['output-offset-y','outputOffsetY'],['output-extra-width','outputExtraWidth']]) if (document.activeElement !== $(id)) $(id).value = s.settings[key];
+  const wallOutput = s.settings.outputMapping === 'wall-1392';
+  $('output-offsets').hidden = $('output-offset-hint').hidden = $('output-width-controls').hidden = !wallOutput;
   for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).checked = s.settings[key];
   if (document.activeElement !== $('intensity')) $('intensity').value = Math.round(s.settings.intensity * 100);
   $('intensity-value').textContent = `${Math.round(s.settings.intensity * 100)}%`;
@@ -44,7 +54,7 @@ function render(s) {
   if (!$('live-scene').selectedOptions[0] || $('live-scene').selectedOptions[0].disabled) $('live-scene').value = [...$('live-scene').options].find(option => !option.disabled)?.value || 'robots';
   $('live-scene').disabled = s.cloud.closing;
   $('generate-robot').disabled = !s.cloud.canGenerate && !s.cloud.canRetry && !s.cloud.streaming && !(s.cloud.closing && s.cloud.state === 'connecting');
-  $('generate-robot').textContent = s.cloud.closing ? (s.cloud.state === 'connecting' ? 'Cancel FAL backup' : 'Closing connection…') : s.cloud.streaming ? `Turn off Lucy · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : `Start live ${$('live-scene').value === 'cartoon' ? 'cartoon' : 'robot'} scene`;
+  $('generate-robot').textContent = s.cloud.closing ? (s.cloud.state === 'connecting' ? 'Cancel FAL backup' : 'Closing connection…') : s.cloud.streaming ? `Turn off Lucy · ${s.cloud.secondsLeft}s left` : s.cloud.code === 'SESSION_BUSY' || s.cloud.canRetry ? 'Retry live connection' : `Start ${s.scenes.find(scene => scene.id === $('live-scene').value)?.name || 'live scene'}`;
   document.querySelector('.privacy-pill').textContent = s.cloud.streaming ? '● Live camera → Lucy / Decart' : '● Local processing';
   $('robot-availability').textContent = s.cloud.display;
   for (const entry of s.settings.scenes.filter(scene => isLiveScene(scene.id))) {
@@ -60,6 +70,10 @@ for (const [id, name] of [['generate-robot','generate-robot'],['output','output'
 $('live-scene').onchange = () => { if (state.cloud.streaming && $('live-scene').value !== state.cloud.sceneId) api.command('select', $('live-scene').value); else render(state); };
 for (const [id, key] of [['duration','duration'],['camera','cameraId'],['display','displayId'],['display-format','displayFormat'],['quality','quality']]) $(id).onchange = () => configure({ [key]: $(id).value });
 for (const [id, key] of [['mirror','mirror'],['auto-fullscreen','fullscreen'],['demo','demo'],['cloud-enabled','robotEnabled']]) $(id).onchange = () => configure({ [key]: $(id).checked });
+$('output-mapping').onchange = () => configure({ outputMapping: $('output-mapping').value, ...($('output-mapping').value === 'wall-1392' ? { displayFormat: '4:3' } : {}) });
+for (const [id, key] of [['output-offset-x','outputOffsetX'],['output-offset-y','outputOffsetY'],['output-extra-width','outputExtraWidth']]) $(id).onchange = () => {
+  if ($(id).reportValidity()) configure({ [key]: Number($(id).value) });
+};
 $('intensity').oninput = () => { $('intensity-value').textContent = `${$('intensity').value}%`; }; $('intensity').onchange = () => configure({ intensity: Number($('intensity').value) / 100 });
 for (const [button, input, provider] of [['save-key', 'fal-key', 'fal'], ['save-decart-key', 'decart-key', 'decart']]) $(button).onclick = async () => { try { await api.saveKey($(input).value, provider); $(input).value = ''; $('notice').textContent = 'API key saved privately.'; } catch { $('notice').textContent = 'Could not save key. Check its format and the file permissions.'; } };
 let previewBusy = false;

@@ -280,7 +280,7 @@ app.whenReady().then(() => {
     syncRobot(); broadcast();
   });
   handle('publish-frame', () => engine, data => {
-    if (data && data.width <= 960 && data.height <= 720 && data.pixels?.length === data.width * data.height * 4) { frame = data; preview = data.preview || preview; cameraHeartbeat = Date.now(); }
+    if (data && data.width <= 1280 && data.height <= 720 && data.pixels?.length === data.width * data.height * 4) { frame = data; preview = data.preview || preview; cameraHeartbeat = Date.now(); }
     return true;
   });
   ipcMain.on('camera-status', (e, status) => { if (!allowed(e, engine)) return; cameraHeartbeat = Date.now(); if (camera.state !== status.state) log('camera-state', status.state); camera = status; });

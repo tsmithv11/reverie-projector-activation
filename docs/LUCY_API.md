@@ -1,14 +1,20 @@
-# Lucy API verification — October 13, 2026
+# Lucy API verification — October 29, 2026
 
 ## Current audience configuration
 
-Both live scenes now use direct Decart with the installed `@decartai/sdk` 0.2.5. Machine dreaming is pinned to `lucy-2.5` with a 1280×720 input. Life in cartoon is pinned to `lucy-restyle-2` with a 1280×704 input. Main mints a token restricted to the selected model, retaining the 120-second expiry and 100-second session backstop. Prompt enhancement remains disabled.
+All five live scenes use direct Decart with the installed `@decartai/sdk` 0.2.5. Machine dreaming is pinned to `lucy-2.5` with a 1280×720 input. Studio Ghibli watercolor, 3D animation, Cyberpunk neon anime, and Claymation are pinned to `lucy-restyle-2` with a 1280×704 input. Main mints a token restricted to the selected model, retaining the 120-second expiry and 100-second session backstop. Prompt enhancement remains disabled. Ghibli sends a restrained watercolor prompt with explicit identity, facial-proportion, expression, anatomy, and frame-consistency instructions. The other two presets send exactly `3D animation style` and `Cyberpunk neon anime style`. Claymation sends a custom prompt applying sculpted clay to every person, object, and background. The Ghibli scene retains the `cartoon` ID to preserve saved ordering and toggles.
 
 Lucy 2.5 sends `queryParams: { self_anchor: "false" }` before the signaling socket opens. The [official generation-stability guidance](https://docs.platform.decart.ai/models/realtime/lucy-2.5#generation-stability) says to disable this for changing people or scenes. It is not a mutable prompt setting. [Restyle 2 realtime](https://docs.platform.decart.ai/models/realtime/video-restyling) does not document self-anchoring, so that model does not receive an invented parameter. The model dimensions come from the installed SDK.
 
-FAL is inactive for both audience scenes: its [Lucy 2.5 realtime schema](https://fal.ai/models/decart/lucy-2-5/realtime/api) does not expose self-anchoring control, and its [published Restyle API](https://fal.ai/models/decart/lucy-restyle/api) is for uploaded videos. No Restyle 2 realtime endpoint was verified there. Existing credentials and legacy transport modules remain stored, but cannot enable or back up these scenes. A Decart failure skips the scene and retains the normal 60-second recovery backoff.
+FAL is inactive for all audience scenes: its [Lucy 2.5 realtime schema](https://fal.ai/models/decart/lucy-2-5/realtime/api) does not expose self-anchoring control, and its [published Restyle API](https://fal.ai/models/decart/lucy-restyle/api) is for uploaded videos. No Restyle 2 realtime endpoint was verified there. Existing credentials and legacy transport modules remain stored, but cannot enable or back up these scenes. A Decart failure skips the scene and retains the normal 60-second recovery backoff.
 
-`npm run test:providers` exercises the actual SDK against mocked sockets for both models, checking the outgoing model and anchoring query parameters, token scope, capture dimensions, prompts, missing/invalid keys, timeout, cancellation, live frame handoff and cleanup. No paid provider request or real crowd rehearsal is part of this check.
+`npm run test:providers` exercises the actual SDK against mocked sockets for both models, checking the outgoing model and anchoring query parameters, token scope, capture dimensions, prompts, missing/invalid keys, timeout, cancellation, live frame handoff and cleanup. Use `node scripts/robot-provider-check.mjs --scene=animation3d --scenario=decart-live` (also `cyberpunk` or `claymation`) to exercise each new scene through the operator selector. No paid provider request or real crowd rehearsal is part of this check.
+
+## Face-quality mitigation — November 4, 2026
+
+The camera service publishes 1280×720 frames during Lucy setup and playback, independent of the adaptive projector resolution. Previously, Balanced supplied only 640×360 before the isolated service enlarged it. Local detection remains at its existing quality-dependent resolution. The model input now uses a centered, uniform crop: Restyle takes 1280×704 from the 1280×720 camera plane, trimming eight pixels at the top and bottom rather than compressing faces vertically. Lucy 2.5 retains the full 16:9 plane.
+
+The Ghibli prompt requests restrained watercolor through color, shading, and texture while preserving identity, facial geometry, expression, anatomy, crowd count, positions, and frame consistency. This is a mitigation, not an identity lock; actual face quality still requires a live comparison. No undocumented Restyle strength, face-lock, or self-anchoring parameter is sent.
 
 ## Historical integration notes — October 8
 

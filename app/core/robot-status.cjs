@@ -44,9 +44,9 @@ function robotStatus({ settings, hasKey, gate, cloud, ready, camera, frameFresh,
   else if (settings.demo) reason = 'demo';
   else if (!reason && (camera !== 'live' || !frameFresh)) reason = 'camera';
   const reasons = {
-    disabled: 'Enable Lucy to stream live robot and cartoon scenes.',
+    disabled: 'Enable Lucy to stream live robot and restyle scenes.',
     'missing-key': 'A Decart API key is required for these live scenes. Add it at the path shown below. FAL backup is disabled for this audience setup.',
-    'scene-disabled': 'Enable Machine dreaming or Life in cartoon in the playlist.',
+    'scene-disabled': 'Enable a Lucy scene in the playlist.',
     demo: 'Rehearsal mode does not upload audience frames.',
     camera: 'A live camera frame is required.',
     busy: cloud.closing ? 'Closing the previous Lucy connection.' : 'Live camera streaming to Lucy.',

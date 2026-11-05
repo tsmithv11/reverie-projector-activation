@@ -16,7 +16,7 @@
     "appId": "com.reverie.installation", "productName": "Reverie Installation",
     "files": ["app/main.cjs", "app/preload.cjs", "app/core/**", "dist/**", "package.json"],
     "directories": {"output": "release"},
-    "mac": {"category": "public.app-category.entertainment", "artifactName": "Reverie-Installation-mac-${arch}.${ext}", "identity": "-", "notarize": false, "hardenedRuntime": true, "entitlements": "build/entitlements.mac.plist", "entitlementsInherit": "build/entitlements.mac.plist", "extendInfo": {"NSCameraUsageDescription": "Reverie uses this camera for a live audience installation. Local effects stay on this computer; optional live robot and cartoon conversion streams camera video to Decart/FAL while those scenes connect and play."}},
+    "mac": {"category": "public.app-category.entertainment", "artifactName": "Reverie-Installation-mac-${arch}.${ext}", "identity": "-", "notarize": false, "hardenedRuntime": true, "entitlements": "build/entitlements.mac.plist", "entitlementsInherit": "build/entitlements.mac.plist", "extendInfo": {"NSCameraUsageDescription": "Reverie uses this camera for a live audience installation. Local effects stay on this computer; optional live robot and restyle conversion streams camera video to Decart/FAL while those scenes connect and play."}},
     "linux": {"category": "Graphics", "target": ["AppImage"]}
   }
 }

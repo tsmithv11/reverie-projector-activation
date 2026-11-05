@@ -283,3 +283,53 @@ The shapes now use the maximum proportional size inside a centered 1.5% short-ed
 The composition rehearsal passed for all seven scenes in both formats, including transitions, rapid selection and resizing, with no renderer errors. All 56 geometry checks passed for proportional scaling, centering, the exact minimum buffer and in-bounds corners across normal, portrait and small preview outputs. Bay, garden and camera-scene screenshots were visually inspected.
 
 The rebuilt Mac app and ZIP passed extraction, strict signature verification and comparison with the tested audience bundle. The packaged bay, garden and typography scenes each sampled 30 fps without renderer errors or cloud requests. The ZIP checksum was refreshed.
+
+## Reverie surround and border palette — 2026-10-29
+
+The audience surround, transparent camera/bay washes, transition background and display margins now use the supplied First Light, Reverie Pink, Soft Orchid, Reverie Lilac and Horizon Blue values. The opaque shape border blends Reverie Pink, Soft Orchid and Reverie Lilac. The scene artwork, geometry and wash opacity endpoints are unchanged.
+
+All 101 existing tests passed. The composition rehearsal passed for all seven scenes at 4:3 and 16:9, including exact palette-gradient midpoints, outgoing fades, rapid selection and resizing, with no renderer errors. Garden, typography and bay screenshots were visually reviewed.
+
+The Mac ARM64 app and transfer ZIP were rebuilt. The app passed strict signature verification; its audience bundle, styles and palette module match the tested build. ZIP integrity passed and its SHA-256 sidecar was refreshed.
+
+## Words in motion brand colors — 2026-10-29
+
+The “Reverie 2026” field now rests in Horizon Blue (`#7A9DDA`) and blends through Reverie Lilac (`#C49ED8`) and Reverie Pink (`#FAA0D0`) to First Light (`#FDCADB`) with movement. Its solid background is Deep Reverie (`#24152F`). The operator thumbnail and scene accent also use the supplied palette.
+
+All 101 existing tests passed. The text-scene rehearsal verified localized highlights, fade to rest, camera isolation, camera loss/recovery and scene re-entry without renderer errors. Playback measured 30 fps at 1920×1080 High and 29.9 fps at 1392×1044 High and 960×720 Low/Fill. Rendered resting and active text were visually reviewed.
+
+The rebuilt Mac app passed strict signature verification, and its audience bundle, operator bundle, styles, palette module and scene settings match the tested sources. Transfer ZIP integrity passed and its SHA-256 sidecar was refreshed.
+
+## Lucy Restyle scene expansion — 2026-10-29
+
+Replaced Life in cartoon with Studio Ghibli watercolor while retaining its `cartoon` ID, saved playlist position and enabled state. Added separate 3D animation, Cyberpunk neon anime and Claymation scenes, bringing the playlist to ten worlds. The first three Restyle scenes send the exact requested preset prompts; Claymation applies a custom handcrafted-clay prompt to all people, objects and backgrounds. All four use `lucy-restyle-2`, scoped credentials, 1280×704 input and disabled prompt enhancement. The operator selector includes every live scene, each new scene has its own tile and portal angle, and the 0 key selects scene ten.
+
+All 114 automated tests passed, including all five live scenes' single-scene availability, token scope, rotation, paused duration limit, shutdown and direct-provider restrictions. Mocked desktop provider checks passed all seven Ghibli scenarios and successful video handoff for each added scene through the operator selector. All ten scenes rendered at 4:3 and 16:9 with exact transition-gradient midpoints, continuous rapid selection, successful resizing and no renderer errors. The operator layout and synthetic projector output were visually reviewed.
+
+The Mac ARM64 app and transfer ZIP were rebuilt. Packaged scene configuration, operator UI, audience renderer, provider bundle and styles match the verified sources; private configuration and test fixtures are excluded. Strict app signature verification and the refreshed ZIP SHA-256 check passed. The packaged Claymation scene passed simulated playback and scene-exit cleanup with no errors. These checks used fake camera/video and mocked provider traffic; no paid Decart request was made, and actual generated style quality still needs a live rehearsal.
+
+## 1392×1044 LED-wall mapping — November 4, 2026
+
+Added an optional **Output area → LED wall · 1392 × 1044 pixels** preset for controllers that expose a larger desktop than the visible wall. It selects 4:3 and maps the composition into a fixed device-pixel area, starting at the top left with black outside. Saved left/top offsets support a visible region elsewhere in the desktop; offsets clamp to keep the complete picture in bounds. Lower render quality does not resize that area. Standard screen fitting remains the default.
+
+- All 117 unit/regression tests passed, including physical-pixel sizing at 1×, 1.25× and 2× density, smaller previews, offset limits and settings persistence.
+- The desktop display rehearsal passed, including a simulated 1920×1600 desktop, exact 1392×1044 wall bounds, 264/278 offsets, High/Low changes, Fill mode, return to standard fitting and application restart. No renderer errors occurred.
+- The wall-area screenshot and operator controls were visually inspected. Evidence: `test-results/display-wall-1392x1044-in-1920x1600.png`, `test-results/display-controls.png`, and `scripts/display-check.mjs`.
+
+This verifies application placement in a simulated viewport, not the physical wall controller’s input mapping. The venue still needs to confirm its visible-region origin, starting with offsets 0/0.
+
+## LED-wall right-edge trim — November 4, 2026
+
+Following venue confirmation that the wall mapping worked with a remaining 20-pixel strip on the right, added a saved **Right edge extension** control. Existing wall settings default to 20 pixels: 1412×1044 total, with the same left/top position whenever that area fits the desktop. The 4:3 canvas fills the wider area with a small horizontal stretch. Zero restores the original 1392×1044 size; the adjustment is limited to 0–200 pixels and does not affect standard screen fitting.
+
+All 118 unit/regression tests and the desktop display rehearsal passed. Checks covered 1×/1.25×/2× geometry, High/Low quality, restoring zero, settings persistence and application restart. The 1412×1044 screenshot and controls were visually inspected; pixel checks confirmed that every pixel in all 20 added columns is filled across the entire height, with black immediately outside the output boundaries. Evidence: `test-results/display-wall-right-edge-20.png`, `test-results/display-controls.png`, and `test-results/wall-width-unit-tests.log`. Physical wall coverage remains to be confirmed at the venue.
+
+The rebuilt Mac app passed strict signature verification and its mapping/settings modules, audience/operator bundles, HTML and styles match the tested files.
+
+## Ghibli face-quality mitigation — November 4, 2026
+
+Replaced the short Ghibli preset with a restrained watercolor prompt requesting consistent identity, facial proportions, expressions, anatomy, and composition. The shared camera now retains a 1280×720 plane during live setup and playback, independent of projector quality, while person detection keeps its existing lower-resolution budget. Restyle input uses a uniform center crop to 1280×704 instead of unequal horizontal/vertical scaling. Local camera resolution returns to its quality-dependent setting on disconnect.
+
+All 120 unit/regression tests passed. The new geometry regressions exercise the actual robot service at 480-, 640-, 960-, and 1280-pixel camera widths, checking uniform scaling and the eight-pixel top/bottom crop, plus unchanged full-frame Lucy 2.5 input. Mocked desktop live checks passed for Ghibli and robots: at Low projector quality, the real camera-to-main-to-Lucy IPC delivered 1280×720 packets and returned to 480×270 after scene exit. The checks also covered model/token routing, frame handoff, and connection cleanup. Provider traffic and camera input were mocked; no paid connection or actual face-quality comparison was performed.
+
+The Mac app and transfer ZIP were rebuilt successfully. Strict deep signature verification passed, and the packaged main process, live-scene configuration, display geometry, camera bundle, and Lucy bundle exactly match the tested files.

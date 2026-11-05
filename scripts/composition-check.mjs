@@ -40,7 +40,8 @@ await writeFile(bootstrap, `
       const canvas = document.querySelector('canvas'), c = document.createElement('canvas');
       c.width = canvas.width; c.height = canvas.height;
       const context = c.getContext('2d'), g = context.createLinearGradient(0, 0, c.width, c.height);
-      g.addColorStop(0, '#f5acd3'); g.addColorStop(.5, '#bea8df'); g.addColorStop(1, '#7297e5');
+      g.addColorStop(0, '#FDCADB'); g.addColorStop(.25, '#FAA0D0'); g.addColorStop(.5, '#E1A3D7');
+      g.addColorStop(.75, '#C49ED8'); g.addColorStop(1, '#7A9DDA');
       context.fillStyle = g; context.fillRect(0, 0, c.width, c.height);
       return context.getImageData(0, 0, c.width, c.height).data;
     },
@@ -73,7 +74,7 @@ try {
     await page.setViewportSize({ width: format === '4:3' ? 960 : 1280, height: 720 });
     await page.evaluate(format => fixture.format(format), format);
     await page.evaluate(() => fixture.step(100));
-    for (const id of ['heat', 'robots', 'monsters', 'lines', 'garden', 'cartoon', 'words']) {
+    for (const id of ['heat', 'robots', 'monsters', 'lines', 'garden', 'cartoon', 'words', 'animation3d', 'cyberpunk', 'claymation']) {
       await page.evaluate(id => fixture.select(id), id);
       await page.evaluate(() => fixture.step(100));
       await page.evaluate(() => { window.outgoing = fixture.pixels(); });

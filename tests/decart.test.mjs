@@ -10,6 +10,7 @@ const { mintDecartToken, TOKEN_URL } = require('../app/core/decart-auth.cjs');
 const { readKeys, saveKey } = require('../app/core/credentials.cjs');
 const { CloudGate } = require('../app/core/cloud-gate.cjs');
 const { sanitize } = require('../app/core/settings.cjs');
+const { LIVE_SCENE_IDS } = require('../app/core/live-scenes.cjs');
 const { configuredProviders, backupProvider } = require('../app/core/robot-providers.cjs');
 
 test('Decart auth scopes a temporary token with a provider-side duration backstop, without exposing permanent credentials', async () => {
@@ -31,14 +32,14 @@ test('Decart auth reports bad keys, billing, limits, service and malformed respo
   for (const value of [null, {}, { apiKey: 'short' }, { apiKey: 42 }]) await assert.rejects(mintDecartToken('x', async () => ({ ok: true, json: async () => value })), { code: 'AUTH_RESPONSE' });
 });
 
-test('cartoon sessions scope credentials to Restyle 2 and use its native frame size', async () => {
+for (const sceneId of LIVE_SCENE_IDS.filter(id => id !== 'robots')) test(`${sceneId} scopes credentials to Restyle 2 and uses its native frame size`, async () => {
   let body;
   await mintDecartToken('private-test-key', async (_, options) => {
     body = JSON.parse(options.body);
     return { ok: true, json: async () => ({ apiKey: 'temporary-token' }) };
-  }, 'cartoon');
+  }, sceneId);
   assert.deepEqual(body.allowedModels, ['lucy-restyle-2']);
-  const cartoon = decartModel('cartoon'), robots = decartModel('robots');
+  const cartoon = decartModel(sceneId), robots = decartModel('robots');
   assert.equal(cartoon.name, 'lucy-restyle-2'); assert.equal(cartoon.width, 1280); assert.equal(cartoon.height, 704);
   assert.equal(robots.name, 'lucy-2.5'); assert.equal(robots.width, 1280); assert.equal(robots.height, 720);
   await assert.rejects(mintDecartToken('private-test-key', () => { throw Error('Must not authenticate an unknown scene'); }, 'unknown'), /Unknown live scene/);

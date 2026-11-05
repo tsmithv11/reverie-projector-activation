@@ -10,7 +10,16 @@ const { LIVE_SCENE_IDS, nextPlaylistScene } = require('../app/core/live-scenes.c
 
 test('existing playlists gain restyles without changing their order or toggles', () => {
   const old = ['garden', 'cartoon', 'heat', 'robots', 'lines', 'monsters', 'words'].map(id => ({ id, enabled: id === 'garden' }));
-  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, ...['animation3d', 'cyberpunk', 'claymation'].map(id => ({ id, enabled: true }))]);
+  assert.deepEqual(sanitize({ scenes: old }).scenes, [...old, ...['animation3d', 'cyberpunk', 'claymation', 'ghibli25'].map(id => ({ id, enabled: true }))]);
+});
+
+test('the Lucy 2.5 Ghibli comparison appends to existing playlists and preserves saved choices', () => {
+  const old = sanitize().scenes.filter(scene => scene.id !== 'ghibli25').reverse()
+    .map(scene => ({ ...scene, enabled: scene.id !== 'cartoon' }));
+  const updated = sanitize({ scenes: old }).scenes;
+  assert.deepEqual(updated, [...old, { id: 'ghibli25', enabled: true }]);
+  updated.find(scene => scene.id === 'ghibli25').enabled = false;
+  assert.deepEqual(sanitize({ scenes: updated }).scenes, updated);
 });
 
 test('playlist order includes enabled Lucy scenes without opening connections', () => {

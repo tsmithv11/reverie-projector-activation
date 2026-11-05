@@ -3,15 +3,42 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import { createRequire } from 'node:module';
-import { decartModel, ownDecartTransports } from '../app/core/decart-connection.js';
+import { decartModel, decartFailure, ownDecartTransports } from '../app/core/decart-connection.js';
 const require = createRequire(import.meta.url);
 const { mintDecartToken, TOKEN_URL } = require('../app/core/decart-auth.cjs');
 const { readKeys, saveKey } = require('../app/core/credentials.cjs');
 const { CloudGate } = require('../app/core/cloud-gate.cjs');
 const { sanitize } = require('../app/core/settings.cjs');
 const { LIVE_SCENE_IDS } = require('../app/core/live-scenes.cjs');
+const { liveScene } = require('../app/core/live-scenes.cjs');
+const { safeDiagnostic } = require('../app/core/robot-status.cjs');
 const { configuredProviders, backupProvider } = require('../app/core/robot-providers.cjs');
+
+test('Decart reports the underlying SDK failure instead of hiding it behind Signaling error', () => {
+  assert.deepEqual(decartFailure({ code: 'WEBRTC_SIGNALING_ERROR', message: 'Signaling error', cause: Error('Prompt enhancement failed') }), {
+    code: 'SIGNALING', detail: 'Prompt enhancement failed'
+  });
+  assert.deepEqual(decartFailure({ code: 'WEBRTC_SIGNALING_ERROR', message: 'Signaling error', cause: Error('Content contains copyrighted IP that cannot be generated') }), {
+    code: 'PROMPT_REJECTED', detail: 'Content contains copyrighted IP that cannot be generated'
+  });
+  for (const [sdkCode, code] of [['INVALID_API_KEY', 'AUTH_REJECTED'], ['WEBRTC_WEBSOCKET_ERROR', 'SIGNALING'], ['WEBRTC_ICE_ERROR', 'PEER_CONNECTION'], ['WEBRTC_TIMEOUT_ERROR', 'TIMEOUT'], ['WEBRTC_SERVER_ERROR', 'PROVIDER_ERROR']]) {
+    assert.equal(decartFailure({ code: sdkCode, message: 'Specific failure' }).code, code);
+  }
+  const circular = Error('Original failure'); circular.cause = circular;
+  assert.equal(decartFailure(circular).detail, 'Original failure');
+  assert.equal(decartFailure({ cause: 'String failure' }).detail, 'String failure');
+  assert.equal(decartFailure(null).detail, '');
+});
+
+test('Decart cause diagnostics redact temporary credentials and negotiation data before leaving the service', () => {
+  const token = 'short-secret';
+  const result = decartFailure({ message: 'Signaling error', cause: Error(`Rejected ${token} at wss://api3.decart.ai/connect?token=${token}`), data: { token } }, token);
+  assert(!result.detail.includes(token)); assert(!result.detail.includes('wss:'));
+  assert.equal(decartFailure({ cause: Error('v=0\r\na=ice-pwd:private') }).detail, 'Provider rejected the video negotiation.');
+  assert.equal(decartFailure({ cause: Error('x'.repeat(500)) }).detail, '[redacted]');
+});
 
 test('Decart auth scopes a temporary token with a provider-side duration backstop, without exposing permanent credentials', async () => {
   let request;
@@ -32,16 +59,17 @@ test('Decart auth reports bad keys, billing, limits, service and malformed respo
   for (const value of [null, {}, { apiKey: 'short' }, { apiKey: 42 }]) await assert.rejects(mintDecartToken('x', async () => ({ ok: true, json: async () => value })), { code: 'AUTH_RESPONSE' });
 });
 
-for (const sceneId of LIVE_SCENE_IDS.filter(id => id !== 'robots')) test(`${sceneId} scopes credentials to Restyle 2 and uses its native frame size`, async () => {
+for (const sceneId of LIVE_SCENE_IDS) test(`${sceneId} scopes credentials to its model and uses its native frame size`, async () => {
+  const expectedModel = ['robots', 'ghibli25'].includes(sceneId) ? 'lucy-2.5' : 'lucy-restyle-2';
   let body;
   await mintDecartToken('private-test-key', async (_, options) => {
     body = JSON.parse(options.body);
     return { ok: true, json: async () => ({ apiKey: 'temporary-token' }) };
   }, sceneId);
-  assert.deepEqual(body.allowedModels, ['lucy-restyle-2']);
-  const cartoon = decartModel(sceneId), robots = decartModel('robots');
-  assert.equal(cartoon.name, 'lucy-restyle-2'); assert.equal(cartoon.width, 1280); assert.equal(cartoon.height, 704);
-  assert.equal(robots.name, 'lucy-2.5'); assert.equal(robots.width, 1280); assert.equal(robots.height, 720);
+  assert.deepEqual(body.allowedModels, [expectedModel]);
+  const model = decartModel(sceneId);
+  assert.equal(model.name, expectedModel); assert.equal(model.width, 1280);
+  assert.equal(model.height, expectedModel === 'lucy-2.5' ? 720 : 704);
   await assert.rejects(mintDecartToken('private-test-key', () => { throw Error('Must not authenticate an unknown scene'); }, 'unknown'), /Unknown live scene/);
 });
 
@@ -89,6 +117,32 @@ class Socket extends EventTarget {
   finish() { this.readyState = 3; this.dispatchEvent(Object.assign(new Event('close'), { code: 1000, wasClean: true })); }
 }
 class Peer { close() { this.closed = true; } }
+
+test('Decart forwards nested failures from both connect rejection and emitted SDK errors, and ignores late events after close', async () => {
+  const source = readFileSync(new URL('../app/core/decart-connection.js', import.meta.url), 'utf8')
+    .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+  const failure = { code: 'WEBRTC_SIGNALING_ERROR', message: 'Signaling error', cause: Error('Content contains copyrighted IP that cannot be generated') };
+  for (const rejects of [false, true]) {
+    const handlers = {}, failures = [];
+    const context = vm.createContext({
+      WebSocket: Socket, RTCPeerConnection: Peer, setTimeout, clearTimeout, liveScene, safeDiagnostic,
+      models: { realtime: name => ({ name }) },
+      createDecartClient: () => ({ realtime: { connect: async () => {
+        if (rejects) throw failure;
+        return { on: (name, handler) => { handlers[name] = handler; }, disconnect() {} };
+      } } })
+    });
+    const open = vm.runInContext(`${source}\nopenDecartConnection`, context);
+    const connection = open({ token: 'test-token', sceneId: 'ghibli25', stream: {}, onError: (...args) => failures.push(args), onRemoteStream() {}, onStage() {} });
+    await new Promise(resolve => setImmediate(resolve));
+    if (!rejects) handlers.error(failure);
+    assert.deepEqual(failures, [['PROMPT_REJECTED', failure.cause.message]]);
+    await connection.close();
+    if (!rejects) { handlers.error(failure); handlers.sessionEnded({ reason: 'closed' }); }
+    assert.equal(failures.length, 1);
+  }
+});
+
 test('Decart pending-connect cleanup closes all transports and prevents late SDK reconnects', async () => {
   const scope = { WebSocket: Socket, RTCPeerConnection: Peer }, errors = [];
   const transport = ownDecartTransports(scope, (...error) => errors.push(error));

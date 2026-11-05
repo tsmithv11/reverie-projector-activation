@@ -8,7 +8,8 @@ const SCENES = [
   { id: 'words', name: 'Words in motion', color: '#C49ED8' },
   { id: 'animation3d', name: '3D animation', color: '#8ca9ef' },
   { id: 'cyberpunk', name: 'Cyberpunk neon anime', color: '#e66bda' },
-  { id: 'claymation', name: 'Claymation', color: '#d6a283' }
+  { id: 'claymation', name: 'Claymation', color: '#d6a283' },
+  { id: 'ghibli25', name: 'Studio Ghibli · Lucy 2.5', color: '#8bb9bd' }
 ];
 const defaults = { cameraId: '', displayId: '', displayFormat: '16:9', outputMapping: 'screen', outputOffsetX: 0, outputOffsetY: 0, outputExtraWidth: 20, duration: 60, quality: 'auto', intensity: 0.7, mirror: true, demo: false, fullscreen: true, robotEnabled: false, scenes: SCENES.map(s => ({ id: s.id, enabled: true })) };
 function sanitize(input = {}) {

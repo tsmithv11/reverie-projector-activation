@@ -16,7 +16,7 @@ test('scheduler runs eight simulated hours, honors bounds and survives playlist 
 });
 test('pause has a stable remaining time; manual selection and reorder are deterministic', () => {
   const s = new Scheduler(sanitize(), 0); s.pause(17000); assert.equal(s.left(999999), 43000); s.resume(100000); assert.equal(s.left(105000), 38000);
-  s.select('lines', 110000); assert.equal(s.left(110000), 60000); assert.equal(s.until('robots', 110000), 480000);
+  s.select('lines', 110000); assert.equal(s.left(110000), 60000); assert.equal(s.until('robots', 110000), 540000);
   s.configure(sanitize({ duration: 10 }), 110000); assert.equal(s.left(110000), 10000);
 });
 test('a one-scene playlist still reactivates on its next slot for a new activation', () => {

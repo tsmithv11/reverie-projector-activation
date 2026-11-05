@@ -1,8 +1,32 @@
 import { createDecartClient, models } from '@decartai/sdk';
 import { liveScene } from './live-scenes.cjs';
+import { safeDiagnostic } from './robot-status.cjs';
 
 export const decartModel = sceneId => models.realtime(liveScene(sceneId).model);
 const quietLogger = Object.fromEntries(['debug', 'info', 'warn', 'error'].map(level => [level, () => {}]));
+
+// The SDK wraps useful failures (including prompt rejection) in a generic
+// "Signaling error". Keep the cause, but never pass credentials or raw SDK data
+// out of this service. Bound traversal because causes can be circular.
+export function decartFailure(error, token = '') {
+  const codes = {
+    INVALID_API_KEY: 'AUTH_REJECTED', TOKEN_INVALID: 'AUTH_REJECTED', TOKEN_EXPIRED: 'AUTH_REJECTED',
+    WEBRTC_SIGNALING_ERROR: 'SIGNALING', WEBRTC_WEBSOCKET_ERROR: 'SIGNALING',
+    WEBRTC_ICE_ERROR: 'PEER_CONNECTION', LIVEKIT_INITIALIZATION_ERROR: 'PEER_CONNECTION',
+    WEBRTC_TIMEOUT_ERROR: 'TIMEOUT', INVALID_INPUT: 'CLIENT_ERROR', INVALID_OPTIONS: 'CLIENT_ERROR'
+  };
+  let current = error, message = '', code = 'PROVIDER_ERROR';
+  const seen = new Set();
+  for (let depth = 0; current && depth < 8 && !seen.has(current); depth++) {
+    seen.add(current);
+    if (codes[current.code]) code = codes[current.code];
+    const detail = typeof current === 'string' ? current : current.message;
+    if (typeof detail === 'string' && detail.trim()) message = detail;
+    current = current.cause;
+  }
+  if (/content contains copyrighted IP/i.test(message)) code = 'PROMPT_REJECTED';
+  return { code, detail: safeDiagnostic(message, token) };
+}
 
 // SDK 0.2.5 exposes disconnect only after connect resolves. Track transports
 // inside this dedicated service so timeout/stop also closes a pending connect.
@@ -50,15 +74,20 @@ export function ownDecartTransports(scope, onError) {
 export function openDecartConnection({ token, stream, sceneId, onRemoteStream, onError, onStage }) {
   const scene = liveScene(sceneId), model = decartModel(sceneId);
   let realtime, stopped = false, connected = false;
-  const transports = ownDecartTransports(globalThis, (code, detail) => { if (!stopped) onError(code, detail); });
+  const transports = ownDecartTransports(globalThis, (code, detail) => { if (!stopped) onError(code, safeDiagnostic(detail, token)); });
   const client = createDecartClient({ apiKey: token, telemetry: false, logger: quietLogger });
   const close = () => { stopped = true; return transports.close(() => realtime?.disconnect()); };
+  const failed = error => {
+    if (stopped) return;
+    const { code, detail } = decartFailure(error, token);
+    onError(code, detail);
+  };
   client.realtime.connect(stream, {
     model, mirror: false, retries: 0,
     // Lucy 2.5 otherwise anchors to earlier generated people. Restyle 2 does
     // not expose this option. It must be set on connect, not in the prompt.
-    ...(sceneId === 'robots' ? { queryParams: { self_anchor: 'false' } } : {}),
-    initialState: { prompt: { text: scene.prompt, enhance: false } },
+    ...(scene.model === 'lucy-2.5' ? { queryParams: { self_anchor: 'false' } } : {}),
+    initialState: { prompt: { text: scene.prompt, enhance: scene.enhance === true } },
     onRemoteStream: remote => { if (!stopped) onRemoteStream(remote); else remote.getTracks().forEach(track => track.stop()); },
     onConnectionChange: state => {
       if (stopped) return;
@@ -71,8 +100,8 @@ export function openDecartConnection({ token, stream, sceneId, onRemoteStream, o
   }).then(result => {
     realtime = result;
     if (stopped) { realtime.disconnect(); return; }
-    realtime.on('error', error => onError(error.code === 'INVALID_API_KEY' ? 'AUTH_REJECTED' : 'PROVIDER_ERROR', error.message));
-    realtime.on('sessionEnded', event => onError('PROVIDER_ERROR', event.reason));
-  }).catch(error => { if (!stopped) onError(error.code === 'INVALID_API_KEY' ? 'AUTH_REJECTED' : 'PROVIDER_ERROR', error.message); });
+    realtime.on('error', failed);
+    realtime.on('sessionEnded', event => failed({ message: event.reason }));
+  }).catch(failed);
   return { close };
 }

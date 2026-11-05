@@ -333,3 +333,27 @@ Replaced the short Ghibli preset with a restrained watercolor prompt requesting 
 All 120 unit/regression tests passed. The new geometry regressions exercise the actual robot service at 480-, 640-, 960-, and 1280-pixel camera widths, checking uniform scaling and the eight-pixel top/bottom crop, plus unchanged full-frame Lucy 2.5 input. Mocked desktop live checks passed for Ghibli and robots: at Low projector quality, the real camera-to-main-to-Lucy IPC delivered 1280×720 packets and returned to 480×270 after scene exit. The checks also covered model/token routing, frame handoff, and connection cleanup. Provider traffic and camera input were mocked; no paid connection or actual face-quality comparison was performed.
 
 The Mac app and transfer ZIP were rebuilt successfully. Strict deep signature verification passed, and the packaged main process, live-scene configuration, display geometry, camera bundle, and Lucy bundle exactly match the tested files.
+
+## Separate Lucy 2.5 Ghibli scene — November 4, 2026
+
+Added **Studio Ghibli · Lucy 2.5** (`ghibli25`) as an eleventh scene, independent of the original Studio Ghibli watercolor (`cartoon`). It uses Lucy 2.5 at 1280×720, model-scoped tokens, `self_anchor=false`, and prompt enhancement for a whole-scene hand-drawn Ghibli prompt. Existing playlists retain their order and toggles; the new enabled entry is appended and can be disabled independently. The live selector, scene tile, model status, and portal rotation include it. The original five live-scene configurations, including the exact original Ghibli prompt, were compared with the previously delivered app and are unchanged.
+
+All 126 unit/regression tests passed, including model/token scoping, playlist migration, per-scene availability, duration limits, cancellation, and shared-stream ownership. All seven mocked provider scenarios passed for `ghibli25`, including verification of the actual outgoing model, anchoring, prompt, enhancement flag, capture size, frame handoff, and cleanup. The original Ghibli mocked live check also passed. The operator layout was visually reviewed. No real audience imagery was uploaded and no live face-quality improvement is claimed.
+
+The composition rehearsal rendered all eleven scenes at both 4:3 and 16:9 (22 samples), with exact gradient midpoints, continuous rapid selection, successful resizing, and no renderer errors.
+
+## Lucy 2.5 prompt rejection — November 4, 2026
+
+The reported `PROVIDER_ERROR · receiving-video / Signaling error` was reproduced with one bounded, real Decart connection using a synthetic animated test pattern. The SDK's nested cause was `Content contains copyrighted IP that cannot be generated`; the initial request returned zero frames. Rewriting only `ghibli25` to describe hand-drawn Japanese animation and watercolor without the studio name returned 50 decoded video frames in 2.7 seconds on a second connection. Both used the same model, scoped token, enhancement setting and anchoring configuration. No audience camera was used, no images were saved, and face quality was not evaluated. Both sessions were closed; the socket events did not acknowledge clean closure, so upstream quota release remains unconfirmed.
+
+The adapter now preserves scrubbed SDK causes and distinguishes the observed prompt rejection from transport, peer, timeout and authentication failures. All 129 unit/regression tests passed, including both asynchronous SDK error paths, nested causes, redaction, and ignoring events after stop. Desktop checks passed for the visible prompt-rejection message/backoff and simulated playback/cleanup of both Ghibli scenes, with zero provider requests in those mocked checks. All five pre-existing scene configurations were compared against the previously delivered app and remain unchanged.
+
+The Mac app and transfer ZIP were rebuilt. Strict deep signature verification passed, and the packaged scene configuration, connection adapter, diagnostic status module, and worker bundle match the tested files. Private files and diagnostic fixtures are excluded. The refreshed ZIP SHA-256 check passed.
+
+## Larger Lucy 2.5 Ghibli opening — November 4, 2026
+
+Changed only `ghibli25`'s portal rotation from −24° to 13°. The shallower angle lets the existing proportional fit expand the opening to 2.13 times its previous area at 4:3 and 2.68 times at 16:9, retaining the reference silhouette and 1.5% short-edge safety margin. The model, prompt, live video and other scenes are unchanged.
+
+The composition rehearsal passed all eleven scenes in both formats, including gradient transitions, rapid reselection and resizing, without renderer errors. The larger opening was visually reviewed in 4:3 and 16:9. A geometry comparison checked 55 scene/size combinations, including portrait and small previews: every corner remains in bounds and the other ten scenes exactly match the previous build.
+
+The rebuilt Mac app passed strict deep signature verification. Its composition module, audience bundle and live-scene settings match the verified sources. The transfer ZIP and its SHA-256 checksum were refreshed and verified.

@@ -74,7 +74,7 @@ try {
     await page.setViewportSize({ width: format === '4:3' ? 960 : 1280, height: 720 });
     await page.evaluate(format => fixture.format(format), format);
     await page.evaluate(() => fixture.step(100));
-    for (const id of ['heat', 'robots', 'monsters', 'lines', 'garden', 'cartoon', 'words', 'animation3d', 'cyberpunk', 'claymation']) {
+    for (const id of ['heat', 'robots', 'monsters', 'lines', 'garden', 'cartoon', 'words', 'animation3d', 'cyberpunk', 'claymation', 'ghibli25']) {
       await page.evaluate(id => fixture.select(id), id);
       await page.evaluate(() => fixture.step(100));
       await page.evaluate(() => { window.outgoing = fixture.pixels(); });

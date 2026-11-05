@@ -19,6 +19,7 @@ const FAILURES = {
   INVALID_IMAGE: 'Lucy returned an empty, black, or invalid image.',
   SESSION_BUSY: 'The provider refused the live connection: concurrent-session limit reached. This app opens one Lucy session at a time. Provider capacity is unconfirmed. If this persists, ask the provider’s support to check upstream sessions and quota.',
   PROVIDER_ERROR: 'Lucy reported a generation error.',
+  PROMPT_REJECTED: 'Lucy rejected this scene’s prompt.',
   TIMEOUT: 'Lucy exceeded the 25-second connection deadline.',
   RENDERER_EXIT: 'The isolated Lucy service stopped unexpectedly.',
   CANCELLED: 'Generation was cancelled by operator settings.',

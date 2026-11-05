@@ -10,3 +10,5 @@
 .audience canvas{position:absolute;left:0;top:0}.audience.wall-output{background:#000}#output-offsets[hidden],#output-offset-hint[hidden]{display:none}
 
 #output-width-controls[hidden]{display:none}#output-width-controls>label{display:block;font-size:11px;color:#8b7393;margin-top:15px}#output-extra-width{margin-top:8px;font-size:11px}
+
+.scene-art.ghibli25{background:linear-gradient(130deg,#dce8cb,#8bb9bd)}.scene-art.ghibli25 span{color:#374e61}

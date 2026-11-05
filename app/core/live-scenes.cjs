@@ -6,7 +6,9 @@ const LIVE_SCENES = {
   cartoon: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: CARTOON_PROMPT },
   animation3d: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: '3D animation style' },
   cyberpunk: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: 'Cyberpunk neon anime style' },
-  claymation: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: 'Transform the entire scene into handcrafted claymation. Make every person, object, and background out of sculpted modeling clay, with visible fingerprints, soft rounded shapes, matte clay textures, and a stop-motion animation look. Preserve the original composition and movement.' }
+  claymation: { model: 'lucy-restyle-2', label: 'Lucy Restyle 2', prompt: 'Transform the entire scene into handcrafted claymation. Make every person, object, and background out of sculpted modeling clay, with visible fingerprints, soft rounded shapes, matte clay textures, and a stop-motion animation look. Preserve the original composition and movement.' },
+  // Separate comparison scene: retain the existing Restyle 2 Ghibli unchanged.
+  ghibli25: { model: 'lucy-2.5', label: 'Lucy 2.5', enhance: true, prompt: 'Restyle the entire scene as hand-drawn Japanese animation with watercolor backgrounds, soft painted colors, and clean character linework. Preserve each person\'s facial proportions, expression, pose, and movement.' }
 };
 const LIVE_SCENE_IDS = Object.keys(LIVE_SCENES);
 function liveScene(id) {

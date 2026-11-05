@@ -1,19 +1,20 @@
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { CARTOON_PROMPT } from '../app/core/live-scenes.cjs';
+import { CARTOON_PROMPT, liveScene } from '../app/core/live-scenes.cjs';
 
 const sceneId = process.argv.find(arg => arg.startsWith('--scene='))?.slice(8) || (process.argv.includes('--cartoon') ? 'cartoon' : 'robots');
 const prompts = { robots: 'Transform each visible person into a realistic ceramic and brushed-metal humanoid robot. Only transform the people and nothing one else.', cartoon: CARTOON_PROMPT, animation3d: '3D animation style', cyberpunk: 'Cyberpunk neon anime style', claymation: 'Transform the entire scene into handcrafted claymation. Make every person, object, and background out of sculpted modeling clay, with visible fingerprints, soft rounded shapes, matte clay textures, and a stop-motion animation look. Preserve the original composition and movement.' };
+prompts.ghibli25 = liveScene('ghibli25').prompt;
 assert(sceneId in prompts, 'Unknown test scene');
-const expectedModel = sceneId === 'robots' ? 'lucy-2.5' : 'lucy-restyle-2';
-const scenarios = ['missing-keys', 'fal-only', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live'];
+const expectedModel = ['robots', 'ghibli25'].includes(sceneId) ? 'lucy-2.5' : 'lucy-restyle-2';
+const scenarios = ['missing-keys', 'fal-only', 'decart-only', 'both-auth-fail', 'cancel-fallback', 'decart-timeout', 'decart-live', 'decart-prompt-rejected'];
 const requestedScenario = process.argv.find(arg => arg.startsWith('--scenario='))?.slice(11);
 assert(!requestedScenario || scenarios.includes(requestedScenario), 'Unknown test scenario');
 for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
   const app = await electron.launch({ args: ['.', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], env: { ...process.env, FAL_KEY: '', DECART_API_KEY: '', REVERIE_TEST_DIR: path.resolve(`test-results/providers-${scenario}-${Date.now()}`) } });
   const watchdog = setTimeout(() => app.process().kill('SIGKILL'), 30000);
-  let sockets = 0, closed = false;
+  let sockets = 0, closed = false, promptReceived = false;
   const errors = [];
   app.on('window', page => page.on('pageerror', error => errors.push(error.message)));
   try {
@@ -29,14 +30,16 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
       assert(ws.url().startsWith('wss://api3.decart.ai/'), 'Only the direct provider may open a socket in these scenarios'); sockets++;
       const params = new URL(ws.url()).searchParams;
       assert.equal(params.get('model'), expectedModel);
-      assert.equal(params.get('self_anchor'), sceneId === 'robots' ? 'false' : null);
+      assert.equal(params.get('self_anchor'), expectedModel === 'lucy-2.5' ? 'false' : null);
       ws.onClose(() => { closed = true; setTimeout(() => ws.close({ code: 1000 }), 750); });
       ws.onMessage(message => {
         const data = JSON.parse(String(message));
         if (data.type === 'prompt') {
           assert.equal(data.prompt, prompts[sceneId]);
-          assert.equal(data.enhance_prompt, false);
+          assert.equal(data.enhance_prompt, sceneId === 'ghibli25');
+          promptReceived = true;
           if (scenario === 'cancel-fallback') ws.send(JSON.stringify({ type: 'error', error: 'Service unavailable' }));
+          if (scenario === 'decart-prompt-rejected') ws.send(JSON.stringify({ type: 'error', error: 'Content contains copyrighted IP that cannot be generated' }));
         }
       });
     });
@@ -54,7 +57,7 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
         const provider = url.includes('decart.ai') ? 'decart' : 'fal';
         globalThis.providerTokenCalls.push(provider);
         if (provider === 'decart') globalThis.providerTokenScopes.push(JSON.parse(options.body).allowedModels);
-        if (['cancel-fallback', 'decart-timeout', 'decart-live'].includes(scenario) && provider === 'decart') return { ok: true, json: async () => ({ apiKey: 'test-temporary-decart-token' }) };
+        if (['cancel-fallback', 'decart-timeout', 'decart-live', 'decart-prompt-rejected'].includes(scenario) && provider === 'decart') return { ok: true, json: async () => ({ apiKey: 'test-temporary-decart-token' }) };
         return { ok: false, status: 401 };
       };
       if (scenario === 'decart-timeout') {
@@ -81,8 +84,8 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
     if (scenario === 'decart-live') {
       await operator.evaluate(() => window.installation.configure({ quality: 'low' }));
       await waitState(state => state.camera.width === 480);
-      assert.equal(await operator.locator('.scene-card').count(), 10);
-      assert.equal(await operator.locator('#live-scene option').count(), 5);
+      assert.equal(await operator.locator('.scene-card').count(), 11);
+      assert.equal(await operator.locator('#live-scene option').count(), 6);
       await operator.selectOption('#live-scene', sceneId);
       await operator.click('#generate-robot');
     }
@@ -92,7 +95,7 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
     } else if (scenario === 'decart-live') {
       const robot = await windowFor('robot');
       await robot.waitForFunction(() => globalThis.testCaptureSize);
-      assert.deepEqual(await robot.evaluate(() => globalThis.testCaptureSize), [1280, sceneId === 'robots' ? 720 : 704]);
+      assert.deepEqual(await robot.evaluate(() => globalThis.testCaptureSize), [1280, expectedModel === 'lucy-2.5' ? 720 : 704]);
       await waitState(state => state.camera.width === 1280 && state.camera.height === 720);
       assert.deepEqual(await robot.evaluate(async () => {
         const frame = await window.installation.frame(-1);
@@ -112,7 +115,9 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
       await waitState(state => state.cloud.ready);
       const live = await operator.evaluate(() => window.installation.state());
       assert.equal(live.cloud.provider, 'decart'); assert.equal(live.active, sceneId); assert.equal(live.cloud.count, 1);
-      assert.match(live.cloud.display, sceneId === 'robots' ? /Lucy 2\.5/ : /Lucy Restyle 2/);
+      assert.match(live.cloud.display, expectedModel === 'lucy-2.5' ? /Lucy 2\.5/ : /Lucy Restyle 2/);
+      assert(promptReceived, 'The SDK must send the configured prompt and enhancement setting');
+      if (sceneId === 'ghibli25') await operator.screenshot({ path: 'test-results/ghibli25-operator.png', fullPage: true });
       if (sceneId === 'claymation') await operator.screenshot({ path: 'test-results/restyles-operator.png', fullPage: true });
       await operator.evaluate(() => window.installation.command('select', 'heat'));
     }
@@ -124,10 +129,16 @@ for (const scenario of requestedScenario ? [requestedScenario] : scenarios) {
     assert.deepEqual(await app.evaluate(() => globalThis.providerTokenScopes), expected.includes('decart') ? [[expectedModel]] : []);
     if (['decart-only', 'both-auth-fail'].includes(scenario)) assert.equal(state.cloud.code, 'AUTH_REJECTED');
     if (scenario === 'decart-timeout') assert.equal(state.cloud.code, 'TIMEOUT');
+    if (scenario === 'decart-prompt-rejected') {
+      assert.equal(state.cloud.code, 'PROMPT_REJECTED');
+      assert.match(state.cloud.message, /Lucy rejected this scene’s prompt/);
+      assert.match(state.cloud.message, /Content contains copyrighted IP/);
+      assert(state.settings.robotEnabled); assert.equal(state.cloud.canGenerate, false);
+    }
     assert.equal(state.cloud.count, expected.length); assert(!state.cloud.ready); assert.notEqual(state.active, sceneId);
     assert.equal(state.cloud.providers.decart, !['missing-keys', 'fal-only'].includes(scenario));
     assert(!JSON.stringify(state).includes('fake-decart-key')); assert(!JSON.stringify(state).includes('fake-fal-key'));
-    assert.equal(sockets, ['cancel-fallback', 'decart-timeout', 'decart-live'].includes(scenario) ? 1 : 0);
+    assert.equal(sockets, ['cancel-fallback', 'decart-timeout', 'decart-live', 'decart-prompt-rejected'].includes(scenario) ? 1 : 0);
     if (sockets) assert(closed);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ scenario, sceneId, pass: true, attempts: expected, providerRequests: 0 }));

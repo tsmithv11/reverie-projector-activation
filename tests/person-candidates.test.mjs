@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { describePose, selectPersonCandidates } from '../app/core/person-candidates.js';
+import { describePose, selectPersonCandidates, hasFullBodyEvidence } from '../app/core/person-candidates.js';
 import { PersonTracker, MAX_PEOPLE, CONFIRM_WINDOW } from '../app/core/person-tracker.js';
 import { assignPeople } from '../app/core/person-assignment.js';
 
@@ -35,6 +35,19 @@ test('partial upper and lower bodies remain eligible without a face or full skel
   f.landmarks[23] = { x: NaN, y: Infinity, visibility: 1 };
   f.landmarks[24] = { x: .5, y: 1.2, visibility: 1 };
   const d = describe(f); assert(d); assert(Number.isFinite(d.x)); assert(d.y <= 1);
+});
+
+test('a close-up head and shoulders qualifies when elbows and hips are outside the camera', () => {
+  const f = fixture();
+  f.landmarks = f.landmarks.map(p => ({ ...p, visibility: .1 }));
+  for (const [i, x, y] of [[0, .4, .3], [2, .34, .25], [5, .46, .25], [11, .25, .55], [12, .55, .55]]) f.landmarks[i] = { x, y, visibility: .95 };
+  assert(describe(f));
+  assert.equal(hasFullBodyEvidence(f, width, height), false);
+  f.landmarks[11].x = -1;
+  assert(describe(f), 'one visible shoulder can establish an edge-cropped portrait');
+  f.landmarks[12].x = 2;
+  assert.equal(describe(f), null, 'a face without supporting body pixels is insufficient for pose acceptance');
+  assert(hasFullBodyEvidence(fixture(), width, height));
 });
 
 test('duplicate masks are removed but overlapping people with distinct joints survive', () => {

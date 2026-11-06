@@ -50,6 +50,7 @@ try {
             const output = document.createElement('canvas'); output.width = width; output.height = height;
             const out = output.getContext('2d'); out.drawImage(canvas, 0, 0);
             const layer = document.createElement('canvas'); layer.width = width; layer.height = height;
+            for (let i = 0; i < data.fill.length; i += 4) { data.fill[i] = 0; data.fill[i + 1] = 255; data.fill[i + 2] = 180; }
             layer.getContext('2d').putImageData(new ImageData(data.fill, width, height), 0, 0);
             out.globalAlpha = .65; out.drawImage(layer, 0, 0); overlay = output.toDataURL('image/png');
           }

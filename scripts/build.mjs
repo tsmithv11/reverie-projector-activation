@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 import { mkdir, cp, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-for (const [manifestPath, file] of [['assets/model-manifest.json', 'efficientdet_lite0.tflite'], ['assets/segmentation-model-manifest.json', 'pose_landmarker_full.task'], ['assets/portrait-model-manifest.json', 'selfie_segmenter.tflite']]) {
+for (const [manifestPath, file] of [['assets/model-manifest.json', 'efficientdet_lite0.tflite'], ['assets/segmentation-model-manifest.json', 'pose_landmarker_full.task'], ['assets/portrait-model-manifest.json', 'selfie_multiclass_256x256.tflite']]) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const bytes = await readFile(`assets/models/${file}`).catch(() => { throw Error('Run npm run assets once online before building.'); });
   if (bytes.length !== manifest.bytes || createHash('sha256').update(bytes).digest('hex') !== manifest.sha256) throw Error(`Offline model verification failed: ${file}. Run npm run assets to restore it.`);

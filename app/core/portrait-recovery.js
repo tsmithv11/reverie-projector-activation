@@ -54,14 +54,17 @@ export function mergePortraitCandidates(poses, portraits) {
   for (const portrait of portraits) {
     // A recovered portrait can replace an incomplete pose over the same pixels.
     // Different people keep their own masks and tracks.
+    const overlapping = [];
     for (let p = retained.length - 1; p >= 0; p--) {
       let area = 0, intersection = 0;
       for (let i = 0; i < portrait.mask.length; i += 2) {
         if (!(retained[p].mask[i] >= .6)) continue;
         area++; if (portrait.mask[i] >= .6) intersection++;
       }
-      if (area && intersection / area > .7) retained.splice(p, 1);
+      if (area && intersection / area > .7) overlapping.push(p);
     }
+    if (overlapping.length > 1) continue;
+    if (overlapping.length) retained.splice(overlapping[0], 1);
     retained.push(portrait);
   }
   return retained;

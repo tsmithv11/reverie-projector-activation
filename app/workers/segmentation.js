@@ -20,7 +20,7 @@ self.onmessage = async ({ data }) => {
         runningMode: 'VIDEO', scoreThreshold: .5, maxResults: MAX_PEOPLE, categoryAllowlist: ['person']
       });
       portraitModel = await ImageSegmenter.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: '../models/selfie_segmenter.tflite', delegate: 'CPU' },
+        baseOptions: { modelAssetPath: '../models/selfie_multiclass_256x256.tflite', delegate: 'CPU' },
         runningMode: 'VIDEO', outputConfidenceMasks: true, outputCategoryMask: false
       });
       self.postMessage({ ready: true }); return;
@@ -47,10 +47,10 @@ self.onmessage = async ({ data }) => {
       }));
       if (boxes.some(b => b.w * b.h >= .04 && b.h >= .25)) {
         portraitModel.segmentForVideo(input, data.time, result => {
-          // The binary Selfie Segmenter has one foreground confidence output.
+          // Class 0 is background; the remaining classes describe the person.
           const source = result.confidenceMasks[0];
           if (source.width !== width || source.height !== height) throw Error('Unexpected portrait mask size');
-          candidates = mergePortraitCandidates(candidates, portraitCandidates(source.getAsFloat32Array(), pixels, width, height, boxes));
+          candidates = mergePortraitCandidates(candidates, portraitCandidates(source.getAsFloat32Array().map(value => 1 - value), pixels, width, height, boxes));
         });
       }
     }
